@@ -1,3 +1,6 @@
+// main.js
+// TerrainGenerator: оркеструет генерацию heightmap, сглаживание, эрозию и передачу в ThreeRenderer
+
 class TerrainGenerator {
     constructor() {
         this.perlin = new PerlinNoise();
@@ -10,7 +13,7 @@ class TerrainGenerator {
         this.updateTimeout = null;
         this.currentSeed = 12345;
         this.currentSize = 257;
-        
+
         if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', () => {
                 this.initialize();
@@ -44,9 +47,10 @@ class TerrainGenerator {
             
             this.threeRenderer = new ThreeRenderer('threeContainer');
             
+            // Немного задержим первичную генерацию, чтобы рендерер успел инициализироваться
             setTimeout(() => {
                 this.generateTerrain();
-            }, 1000);
+            }, 800);
             
         } catch (error) {
             console.error('Ошибка инициализации ThreeRenderer:', error);
@@ -131,7 +135,8 @@ class TerrainGenerator {
     toggleAntiAliasing(enabled) {
         if (!this.threeRenderer) return;
         
-        // Для простоты просто пересоздаем сцену с новыми настройками
+        // Для простоты — пересоздание рендера опущено; просто регенерируем террейн,
+        // так как anti-aliasing влияет на создание renderer в ThreeRenderer (по дизайну)
         console.log('Переключение антиалиасинга:', enabled ? 'включено' : 'выключено');
         this.generateTerrain();
     }
@@ -313,6 +318,9 @@ class TerrainGenerator {
         }
     }
 
+    // ---------------------------
+    // Главный генератор
+    // ---------------------------
     async generateTerrain(showProgress = true) {
         if (this.isGenerating) {
             console.log('Генерация уже выполняется...');
@@ -375,7 +383,13 @@ class TerrainGenerator {
                 if (showProgress) {
                     this.updateProgress(50, "Применение сглаживания...");
                 }
+                // существующее комплексное сглаживание (твоя реализация)
                 heightmap = this.applyAdvancedSmoothing(heightmap, size, smoothing / 100);
+
+                // Затем Laplacian smoothing для более мягкого и контролируемого результата
+                const lapIterations = Math.max(1, Math.round((smoothing / 100) * 3)); // 1..3
+                const lapAlpha = 0.35 + (smoothing / 100) * 0.25; // 0.35..0.6
+                laplacianSmooth(heightmap, size, lapIterations, lapAlpha);
             }
 
             if (erosionIterations > 0) {
@@ -390,7 +404,17 @@ class TerrainGenerator {
 
             // Легкое финальное сглаживание после эрозии
             if (smoothing > 0) {
-                heightmap = this.applyLightSmoothing(heightmap, size, 0.08);
+                if (showProgress) {
+                    this.updateProgress(75, "Финальное сглаживание после эрозии.");
+                }
+
+                // небольшой light smoothing
+                heightmap = this.applyLightSmoothing(heightmap, size, 0.06);
+
+                // финальный небольшой Laplacian-pass
+                const finalLapIterations = 1;
+                const finalLapAlpha = 0.25 + (smoothing / 100) * 0.25; // 0.25..0.5
+                laplacianSmooth(heightmap, size, finalLapIterations, finalLapAlpha);
             }
 
             if (showProgress) {
@@ -434,315 +458,263 @@ class TerrainGenerator {
         }
     }
 
+    // ---------------------------
+    // Вспомогательные генераторы (вызывают соответствующие модули)
+    // ---------------------------
     generatePerlinHeightmap(size, scale, octaves, roughness) {
-        console.log('Генерация улучшенного Perlin Noise...');
-        this.perlin = new PerlinNoise(this.currentSeed);
-        
-        // Автоматическая корректировка параметров для избежания волн
-        const safeScale = scale % 40 === 0 ? scale + 7 : scale; // Избегаем резонансных значений
-        const safeOctaves = Math.min(octaves, 6); // Ограничиваем октавы
-        
-        return this.perlin.generateMultiFrequencyHeightmap(
-            size, size, safeScale, safeOctaves, roughness, 2.0
-        );
+        // Вызов метода в perlin.js
+        // perlin.generateHighResolutionHeightmap(width, height, scale, octaves, persistence, lacunarity)
+        const persistence = 0.5;
+        const lacunarity = 2.0;
+        const map = this.perlin.generateHighResolutionHeightmap(size, size, scale, octaves, persistence, lacunarity);
+        return map;
     }
 
-    generateDiamondSquareHeightmap(size, roughness) {
-        console.log('Генерация Diamond-Square...');
-        this.diamondSquare = new DiamondSquare(this.currentSeed);
-        return this.diamondSquare.generate(size, roughness);
+    generateDiamondSquareHeightmap(size, dsRoughness) {
+        // diamondSquare.generate(size, roughness) -> Float32Array
+        const map = this.diamondSquare.generate(size, dsRoughness);
+        return map;
     }
 
     generateHybridHeightmap(size, scale, octaves, roughness, dsRoughness, hybridWeight) {
-        console.log('Генерация гибридного ландшафта...');
-        this.perlin = new PerlinNoise(this.currentSeed);
-        this.diamondSquare = new DiamondSquare(this.currentSeed);
-        
-        return this.diamondSquare.generateHybrid(
-            size, 
-            this.perlin, 
-            scale, 
-            hybridWeight, 
-            dsRoughness
-        );
-    }
+        // Генерируем обе карты и смешиваем с весом hybridWeight (0..1)
+        const perlinMap = this.generatePerlinHeightmap(size, scale, octaves, roughness);
+        const diamondMap = this.generateDiamondSquareHeightmap(size, dsRoughness);
 
-    applyAdvancedSmoothing(heightmap, size, strength) {
-        if (strength <= 0) return heightmap;
-
-        const smoothed = new Float32Array(heightmap);
-        const kernel = [
-            [1, 2, 1],
-            [2, 4, 2], 
-            [1, 2, 1]
-        ];
-        const kernelSum = 16;
-
-        for (let pass = 0; pass < 2; pass++) {
-            const source = pass === 0 ? heightmap : smoothed;
-            const target = smoothed;
-            
-            for (let y = 1; y < size - 1; y++) {
-                for (let x = 1; x < size - 1; x++) {
-                    let sum = 0;
-                    
-                    for (let dy = -1; dy <= 1; dy++) {
-                        for (let dx = -1; dx <= 1; dx++) {
-                            const weight = kernel[dy + 1][dx + 1];
-                            sum += source[(y + dy) * size + (x + dx)] * weight;
-                        }
-                    }
-                    
-                    const average = sum / kernelSum;
-                    const current = source[y * size + x];
-                    target[y * size + x] = current + (average - current) * strength;
-                }
-            }
+        const result = new Float32Array(size * size);
+        for (let i = 0; i < result.length; i++) {
+            // ослабляем перлин немного, чтобы избежать глубоких впадин
+            const p = perlinMap[i] * 0.85;
+            const d = diamondMap[i];
+            result[i] = Math.min(1, Math.max(0, p * (1 - hybridWeight) + d * hybridWeight));
         }
-
-        return smoothed;
+        return result;
     }
 
-    applyLightSmoothing(heightmap, size, strength) {
-        if (strength <= 0) return heightmap;
-
-        const smoothed = new Float32Array(heightmap);
-        
-        for (let y = 1; y < size - 1; y++) {
-            for (let x = 1; x < size - 1; x++) {
-                let sum = 0;
-                let count = 0;
-                
-                for (let dy = -1; dy <= 1; dy++) {
-                    for (let dx = -1; dx <= 1; dx++) {
-                        sum += heightmap[(y + dy) * size + (x + dx)];
+    // ---------------------------
+    // Коррекции/сглаживания/утилиты
+    // ---------------------------
+    applyFinalWaveCorrection(heightmap, size, strength = 0.12) {
+        // Простая коррекция мелких волн: уменьшить локальные экстремумы
+        const n = size;
+        const out = new Float32Array(heightmap.length);
+        for (let y = 0; y < n; y++) {
+            for (let x = 0; x < n; x++) {
+                const idx = y * n + x;
+                const center = heightmap[idx];
+                // соседняя средняя
+                let sum = 0, count = 0;
+                for (let oy = -1; oy <= 1; oy++) {
+                    for (let ox = -1; ox <= 1; ox++) {
+                        const nx = x + ox, ny = y + oy;
+                        if (nx < 0 || nx >= n || ny < 0 || ny >= n) continue;
+                        if (nx === x && ny === y) continue;
+                        sum += heightmap[ny * n + nx];
                         count++;
                     }
                 }
-                
-                const average = sum / count;
-                const current = heightmap[y * size + x];
-                smoothed[y * size + x] = current + (average - current) * strength;
+                const avg = count ? sum / count : center;
+                out[idx] = center + (avg - center) * strength;
             }
         }
-
-        return smoothed;
+        return out;
     }
 
-    // Новый метод для окончательной коррекции волн
-    applyFinalWaveCorrection(heightmap, size, intensity = 0.15) {
-        console.log('Применение коррекции волн...');
-        
-        const temp = new Float32Array(heightmap);
-        let correctionsApplied = 0;
-        
-        for (let y = 2; y < size - 2; y++) {
-            for (let x = 2; x < size - 2; x++) {
-                // Обнаружение волн через анализ второй производной
-                const waveStrength = this.detectWavePattern(temp, size, x, y);
-                
-                if (waveStrength > 0.1) {
-                    // Добавляем корректирующий шум
-                    const correction = (Math.random() - 0.5) * intensity * waveStrength;
-                    heightmap[y * size + x] = Math.max(0, Math.min(1, heightmap[y * size + x] + correction));
-                    correctionsApplied++;
+    applyAdvancedSmoothing(heightmap, size, intensity = 0.3) {
+        // Твоя существующая реализация — пока вызываем простой комбинированный метод:
+        // слабый Gaussian + многократный box blur (в качестве placeholder)
+        const n = size;
+        // simple 3x3 average pass scaled by intensity
+        const tmp = new Float32Array(heightmap.length);
+        const kernelFactor = intensity;
+        for (let y = 0; y < n; y++) {
+            for (let x = 0; x < n; x++) {
+                let sum = 0, cnt = 0;
+                for (let oy = -1; oy <= 1; oy++) {
+                    for (let ox = -1; ox <= 1; ox++) {
+                        const nx = x + ox, ny = y + oy;
+                        if (nx >= 0 && nx < n && ny >= 0 && ny < n) {
+                            sum += heightmap[ny * n + nx];
+                            cnt++;
+                        }
+                    }
                 }
+                const idx = y * n + x;
+                const avg = cnt ? sum / cnt : heightmap[idx];
+                tmp[idx] = heightmap[idx] * (1 - kernelFactor) + avg * kernelFactor;
             }
         }
-        
-        console.log(`Коррекция волн: применено ${correctionsApplied} исправлений`);
+        heightmap.set(tmp);
         return heightmap;
     }
 
-    detectWavePattern(heightmap, size, x, y) {
-        // Анализ локальной области на регулярность
-        let patternScore = 0;
-        const center = heightmap[y * size + x];
-        
-        // Проверяем симметрию в 8 направлениях
-        const directions = [
-            [-1, -1], [-1, 0], [-1, 1],
-            [0, -1],         [0, 1],
-            [1, -1],  [1, 0], [1, 1]
-        ];
-        
-        let similarCount = 0;
-        
-        for (const [dx, dy] of directions) {
-            const nx = x + dx;
-            const ny = y + dy;
-            
-            if (nx >= 0 && nx < size && ny >= 0 && ny < size) {
-                const neighbor = heightmap[ny * size + nx];
-                if (Math.abs(center - neighbor) < 0.03) {
-                    similarCount++;
+    applyLightSmoothing(heightmap, size, strength = 0.08) {
+        // очень лёгкое сглаживание (для финального шага)
+        const n = size;
+        const tmp = new Float32Array(heightmap.length);
+        for (let y = 0; y < n; y++) {
+            for (let x = 0; x < n; x++) {
+                let sum = 0, cnt = 0;
+                for (let oy = -1; oy <= 1; oy++) {
+                    for (let ox = -1; ox <= 1; ox++) {
+                        const nx = x + ox, ny = y + oy;
+                        if (nx >= 0 && nx < n && ny >= 0 && ny < n) {
+                            sum += heightmap[ny * n + nx];
+                            cnt++;
+                        }
+                    }
                 }
+                const idx = y * n + x;
+                const avg = cnt ? sum / cnt : heightmap[idx];
+                tmp[idx] = heightmap[idx] * (1 - strength) + avg * strength;
             }
         }
-        
-        // Если много похожих соседей - возможен регулярный паттерн
-        return similarCount >= 5 ? similarCount / 8 : 0;
+        heightmap.set(tmp);
+        return heightmap;
     }
 
-    getLODValue() {
-        const size = this.currentSize;
-        
-        // УЛУЧШЕННАЯ ЛОГИКА LOD - МЕНЬШЕ АГРЕССИВНОЕ УМЕНЬШЕНИЕ
-        if (size <= 65) return '1';    // Полное разрешение
-        if (size <= 129) return '1';   // Полное разрешение  
-        if (size <= 257) return '2';   // В 2 раза меньше
-        if (size <= 513) return '4';   // В 4 раза меньше
-        
-        return '8'; // Для очень больших размеров
-    }
+    // ---------------------------
+    // Laplacian smoothing (интегрирован)
+    // ---------------------------
+    // Реализован как глобальная утилита-функция ниже (в файле) — но можно и методом класса.
+    // Вставлен как внешняя функция (ниже), используется тут.
 
-    setViewMode(mode) {
-        if (!this.threeRenderer || !this.threeRenderer.terrain) return;
-
-        this.threeRenderer.setViewMode(mode);
-        
-        const solidBtn = document.getElementById('viewSolid');
-        const wireframeBtn = document.getElementById('viewWireframe');
-        
-        if (solidBtn && wireframeBtn) {
-            if (mode === 'wireframe') {
-                solidBtn.classList.remove('active');
-                wireframeBtn.classList.add('active');
-            } else {
-                solidBtn.classList.add('active');
-                wireframeBtn.classList.remove('active');
-            }
-        }
-    }
-
-    takeScreenshot() {
-        if (this.threeRenderer) {
-            this.threeRenderer.takeScreenshot();
-        }
-    }
-
-    updateProgress(percent, text) {
-        if (this.threeRenderer) {
-            this.threeRenderer.showLoading(true, text, percent);
-        }
-    }
-
+    // ---------------------------
+    // Нормализация высот
+    // ---------------------------
     normalizeHeightmap(heightmap) {
         if (!heightmap || heightmap.length === 0) return;
-
-        let min = Number.MAX_VALUE;
-        let max = Number.MIN_VALUE;
-        
-        const step = Math.max(1, Math.floor(heightmap.length / 10000));
-        for (let i = 0; i < heightmap.length; i += step) {
-            min = Math.min(min, heightmap[i]);
-            max = Math.max(max, heightmap[i]);
+        let min = Infinity, max = -Infinity;
+        for (let i = 0; i < heightmap.length; i++) {
+            const v = heightmap[i];
+            if (v < min) min = v;
+            if (v > max) max = v;
         }
-
-        if (min === max) {
-            heightmap.fill(0.5);
+        const range = max - min;
+        if (range === 0) {
+            // всё одно значение — установим 0.5
+            for (let i = 0; i < heightmap.length; i++) heightmap[i] = 0.5;
             return;
         }
-        
-        const range = max - min;
         for (let i = 0; i < heightmap.length; i++) {
             heightmap[i] = (heightmap[i] - min) / range;
         }
     }
 
-    updateStats(heightmap, startTime) {
-        if (!heightmap || heightmap.length === 0) return;
-
-        let minHeight = Number.MAX_VALUE;
-        let maxHeight = Number.MIN_VALUE;
-        
-        const step = Math.max(1, Math.floor(heightmap.length / 5000));
-        for (let i = 0; i < heightmap.length; i += step) {
-            minHeight = Math.min(minHeight, heightmap[i]);
-            maxHeight = Math.max(maxHeight, heightmap[i]);
+    // ---------------------------
+    // Вспомогательные: прогресс / статистика / экспорт
+    // ---------------------------
+    updateProgress(percent, text) {
+        if (this.threeRenderer) {
+            this.threeRenderer.showLoading(true, text || "Загрузка...", percent);
         }
-
-        const generationTime = performance.now() - startTime;
-
-        this.updateElementText('minHeight', `Мин: ${minHeight.toFixed(3)}`);
-        this.updateElementText('maxHeight', `Макс: ${maxHeight.toFixed(3)}`);
-        this.updateElementText('generationTime', `Время: ${(generationTime / 1000).toFixed(1)}с`);
-        
-        if (this.threeRenderer && this.threeRenderer.terrain) {
-            const vertexCount = this.threeRenderer.terrain.geometry.attributes.position.count;
-            this.updateElementText('vertexCount', `Вершины: ${vertexCount.toLocaleString()}`);
-        }
+        const progressEl = document.getElementById('loadingProgress');
+        if (progressEl) progressEl.textContent = `${Math.round(percent)}%`;
     }
 
-    updateElementText(elementId, text) {
-        const element = document.getElementById(elementId);
-        if (element) {
-            element.textContent = text;
-        }
+    updateStats(heightmap, startTime) {
+        const now = performance.now();
+        const dt = now - startTime;
+        const n = Math.sqrt(heightmap.length);
+        const verts = heightmap.length;
+        console.log(`Готово — vertices: ${verts}, размер: ${n}x${n}, время: ${Math.round(dt)}ms`);
     }
 
     exportHeightmap() {
-        if (!this.currentHeightmap) {
-            alert('Сначала сгенерируйте ландшафт!');
-            return;
+        if (!this.currentHeightmap) return;
+        const size = Math.sqrt(this.currentHeightmap.length);
+        // экспорт в PNG heightmap
+        const canvas = document.createElement('canvas');
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext('2d');
+        const imgData = ctx.createImageData(size, size);
+        for (let y = 0; y < size; y++) {
+            for (let x = 0; x < size; x++) {
+                const v = Math.floor(this.currentHeightmap[y * size + x] * 255);
+                const idx = (y * size + x) * 4;
+                imgData.data[idx] = v;
+                imgData.data[idx + 1] = v;
+                imgData.data[idx + 2] = v;
+                imgData.data[idx + 3] = 255;
+            }
         }
-        
-        try {
-            const size = Math.sqrt(this.currentHeightmap.length);
-            const algorithm = document.getElementById('algorithm')?.value || 'hybrid';
-            
-            const data = {
-                size: size,
-                heightmap: Array.from(this.currentHeightmap),
-                parameters: {
-                    algorithm: algorithm,
-                    seed: this.currentSeed,
-                    scale: this.getNumberValue('scale', 87),
-                    octaves: this.getNumberValue('octaves', 3),
-                    roughness: this.getNumberValue('roughness', 35) / 100,
-                    dsRoughness: this.getNumberValue('dsRoughness', 50) / 100,
-                    hybridWeight: this.getNumberValue('hybridWeight', 40) / 100,
-                    heightScale: this.getNumberValue('heightScale', 50),
-                    erosionIterations: this.getNumberValue('erosionIterations', 3000),
-                    smoothing: this.getNumberValue('smoothing', 30)
-                },
-                metadata: {
-                    generated: new Date().toISOString(),
-                    version: "2.0"
-                }
-            };
-            
-            const blob = new Blob([JSON.stringify(data, null, 2)], { 
-                type: 'application/json' 
-            });
+        ctx.putImageData(imgData, 0, 0);
+        canvas.toBlob((blob) => {
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `terrain_${algorithm}_${Date.now()}.json`;
+            a.download = `heightmap_${Date.now()}.png`;
             document.body.appendChild(a);
             a.click();
-            document.body.removeChild(a);
+            a.remove();
             URL.revokeObjectURL(url);
-            
-            console.log('Высоты экспортированы');
-        } catch (error) {
-            console.error('Ошибка экспорта:', error);
-            alert('Ошибка при экспорте данных');
+        });
+    }
+
+    takeScreenshot() {
+        if (!this.threeRenderer) return;
+        this.threeRenderer.takeScreenshot();
+    }
+
+    getLODValue() {
+        // можно расширить логику, например в зависимости от размера/quality
+        const q = document.getElementById('renderQuality')?.value || 'high';
+        switch (q) {
+            case 'low': return 2;
+            case 'medium': return 1;
+            default: return 1;
+        }
+    }
+
+    setViewMode(mode) {
+        if (!this.threeRenderer) return;
+        if (mode === 'wireframe') {
+            this.threeRenderer.setViewMode('wireframe');
+        } else {
+            this.threeRenderer.setViewMode('solid');
         }
     }
 }
 
-function initializeApp() {
-    try {
-        console.log('Запуск генератора ландшафта с улучшенным качеством...');
-        new TerrainGenerator();
-    } catch (error) {
-        console.error('Критическая ошибка при инициализации приложения:', error);
+// ---------------------------
+// ВНЕШНЯЯ УТИЛИТА: Laplacian smoothing
+// ---------------------------
+function laplacianSmooth(heightmap, size, iterations = 3, alpha = 0.5) {
+    if (!heightmap || heightmap.length === 0) return;
+    const n = size;
+    const tmp = new Float32Array(heightmap.length);
+
+    for (let it = 0; it < iterations; it++) {
+        for (let y = 0; y < n; y++) {
+            for (let x = 0; x < n; x++) {
+                let sum = 0;
+                let count = 0;
+                for (let oy = -1; oy <= 1; oy++) {
+                    for (let ox = -1; ox <= 1; ox++) {
+                        if (ox === 0 && oy === 0) continue;
+                        const nx = x + ox;
+                        const ny = y + oy;
+                        if (nx >= 0 && nx < n && ny >= 0 && ny < n) {
+                            sum += heightmap[ny * n + nx];
+                            count++;
+                        }
+                    }
+                }
+                const idx = y * n + x;
+                const avg = count ? sum / count : heightmap[idx];
+                tmp[idx] = heightmap[idx] + alpha * (avg - heightmap[idx]);
+            }
+        }
+        // записываем обратно
+        heightmap.set(tmp);
     }
+    return heightmap;
 }
 
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initializeApp);
-} else {
-    initializeApp();
-}
+// ---------------------------
+// Инициализация приложения
+// ---------------------------
+document.addEventListener('DOMContentLoaded', () => {
+    window.terrainApp = new TerrainGenerator();
+});

@@ -1,164 +1,225 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ru">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>3D Генератор ландшафта - Diamond-Square + Perlin</title>
-    <link rel="stylesheet" href="style.css">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.min.js"></script>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>3D Генератор ландшафта</title>
+  <link rel="stylesheet" href="style.css">
+  <!-- Three.js (CDN) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.min.js"></script>
 </head>
 <body>
-    <div class="container">
-        <header>
-            <h1>3D Генератор ландшафта - Diamond-Square + Perlin</h1>
-            <p>Два алгоритма генерации: органичный Diamond-Square и детализированный Perlin Noise</p>
-        </header>
+  <div class="app">
+    <header class="header">
+      <div class="header-inner">
+        <h1 class="title">3D Генератор ландшафта</h1>
+        <p class="subtitle">Diamond-Square · Perlin · Эрозия · Редактор</p>
+      </div>
+      <div class="header-stats">
+        <div id="algorithmInfo" class="stat">Алгоритм: —</div>
+        <div id="vertexCount" class="stat">Вершины: —</div>
+        <div id="polyCount" class="stat">Полигоны: —</div>
+      </div>
+    </header>
 
-        <div class="controls-panel">
-            <div class="control-section">
-                <h3>🎲 Генерация</h3>
-                <div class="control-group">
-                    <label for="seed">Сид:</label>
-                    <input type="number" id="seed" value="12345">
-                    <button id="randomSeed">Новый сид</button>
-                </div>
-                <div class="control-group">
-                    <label for="size">Размер:</label>
-                    <select id="size">
-                        <option value="65">65x65</option>
-                        <option value="129">129x129</option>
-                        <option value="257" selected>257x257</option>
-                        <option value="513">513x513</option>
-                    </select>
-                </div>
-                <div class="control-group">
-                    <label for="algorithm">Алгоритм:</label>
-                    <select id="algorithm">
-                        <option value="perlin">Perlin Noise</option>
-                        <option value="diamond">Diamond-Square</option>
-                        <option value="hybrid" selected>Гибридный</option>
-                    </select>
-                </div>
-                <button id="generate" class="generate-btn">🎯 Сгенерировать ландшафт</button>
+    <main class="main">
+      <aside class="sidebar" aria-label="Панель управления">
+        <section class="panel">
+          <h2 class="panel-title">Генерация</h2>
+
+          <label class="field">
+            <span class="label">Seed</span>
+            <div class="field-row">
+              <input id="seed" type="number" value="12345" class="input-small" />
+              <button id="randomSeed" class="btn">Новый seed</button>
             </div>
+          </label>
 
-            <div class="control-section">
-                <h3>⚙️ Параметры шума</h3>
-                <div class="control-group">
-                    <label for="scale">Масштаб:</label>
-                    <input type="range" id="scale" min="10" max="500" value="120">
-                    <span id="scaleValue">120</span>
-                </div>
-                <div class="control-group">
-                    <label for="octaves">Октавы:</label>
-                    <input type="range" id="octaves" min="1" max="10" value="4">
-                    <span id="octavesValue">4</span>
-                </div>
-                <div class="control-group">
-                    <label for="roughness">Шероховатость:</label>
-                    <input type="range" id="roughness" min="1" max="100" value="40">
-                    <span id="roughnessValue">0.4</span>
-                </div>
+          <label class="field">
+            <span class="label">Размер сетки</span>
+            <select id="size" class="select">
+              <option value="65">65 × 65</option>
+              <option value="129">129 × 129</option>
+              <option value="257" selected>257 × 257</option>
+              <option value="513">513 × 513</option>
+            </select>
+          </label>
+
+          <label class="field">
+            <span class="label">Алгоритм</span>
+            <select id="algorithm" class="select">
+              <option value="perlin">Perlin</option>
+              <option value="diamond">Diamond-Square</option>
+              <option value="hybrid" selected>Гибрид</option>
+            </select>
+          </label>
+
+          <button id="generate" class="btn primary full">Сгенерировать</button>
+        </section>
+
+        <section class="panel">
+          <h2 class="panel-title">Параметры шума</h2>
+
+          <label class="field">
+            <span class="label">Scale</span>
+            <input id="scale" type="range" min="10" max="500" value="120">
+            <div class="value" id="scaleValue">120</div>
+          </label>
+
+          <label class="field">
+            <span class="label">Octaves</span>
+            <input id="octaves" type="range" min="1" max="10" value="4">
+            <div class="value" id="octavesValue">4</div>
+          </label>
+
+          <label class="field">
+            <span class="label">Roughness</span>
+            <input id="roughness" type="range" min="1" max="100" value="40">
+            <div class="value" id="roughnessValue">0.40</div>
+          </label>
+        </section>
+
+        <section class="panel">
+          <h2 class="panel-title">Diamond-Square</h2>
+
+          <label class="field">
+            <span class="label">DS Roughness</span>
+            <input id="dsRoughness" type="range" min="1" max="100" value="50">
+            <div class="value" id="dsRoughnessValue">0.50</div>
+          </label>
+
+          <label class="field">
+            <span class="label">Hybrid Weight</span>
+            <input id="hybridWeight" type="range" min="0" max="100" value="40">
+            <div class="value" id="hybridWeightValue">40%</div>
+          </label>
+        </section>
+
+        <section class="panel">
+          <h2 class="panel-title">Рельеф</h2>
+
+          <label class="field">
+            <span class="label">Height scale</span>
+            <input id="heightScale" type="range" min="10" max="200" value="50">
+            <div class="value" id="heightScaleValue">50</div>
+          </label>
+
+          <label class="field">
+            <span class="label">Erosion iterations</span>
+            <input id="erosionIterations" type="range" min="0" max="10000" value="3000">
+            <div class="value" id="erosionValue">3000</div>
+          </label>
+
+          <label class="field">
+            <span class="label">Smoothing</span>
+            <input id="smoothing" type="range" min="0" max="100" value="30">
+            <div class="value" id="smoothingValue">30</div>
+          </label>
+        </section>
+
+        <section class="panel">
+          <h2 class="panel-title">Внешний вид</h2>
+
+          <label class="field">
+            <span class="label">Water level</span>
+            <input id="waterLevel" type="range" min="0" max="100" value="15">
+            <div class="value" id="waterLevelValue">15%</div>
+          </label>
+
+          <label class="field">
+            <span class="label">Color intensity</span>
+            <input id="colorIntensity" type="range" min="50" max="200" value="100">
+            <div class="value" id="colorIntensityValue">100%</div>
+          </label>
+
+          <div class="field">
+            <span class="label">View</span>
+            <div class="view-buttons">
+              <button id="viewSolid" class="btn active">Текстура</button>
+              <button id="viewWireframe" class="btn">Сетка</button>
             </div>
+          </div>
+        </section>
 
-            <div class="control-section">
-                <h3>🔷 Diamond-Square</h3>
-                <div class="control-group">
-                    <label for="dsRoughness">Шероховатость DS:</label>
-                    <input type="range" id="dsRoughness" min="1" max="100" value="50">
-                    <span id="dsRoughnessValue">0.5</span>
-                </div>
-                <div class="control-group">
-                    <label for="hybridWeight">Смешивание:</label>
-                    <input type="range" id="hybridWeight" min="0" max="100" value="40">
-                    <span id="hybridWeightValue">40%</span>
-                </div>
-            </div>
+        <section class="panel">
+          <h2 class="panel-title">Инструменты</h2>
+          <div class="tools">
+            <button id="export" class="btn">Экспорт</button>
+            <button id="screenshot" class="btn">Скриншот</button>
+          </div>
 
-            <div class="control-section">
-                <h3>🏔️ Рельеф</h3>
-                <div class="control-group">
-                    <label for="heightScale">Высота:</label>
-                    <input type="range" id="heightScale" min="10" max="200" value="50">
-                    <span id="heightScaleValue">50</span>
-                </div>
-                <div class="control-group">
-                    <label for="erosionIterations">Эрозия:</label>
-                    <input type="range" id="erosionIterations" min="0" max="10000" value="3000">
-                    <span id="erosionValue">3000</span>
-                </div>
-                <div class="control-group">
-                    <label for="smoothing">Сглаживание:</label>
-                    <input type="range" id="smoothing" min="0" max="100" value="30">
-                    <span id="smoothingValue">30</span>
-                </div>
-            </div>
+          <label class="field">
+            <span class="label">Render quality</span>
+            <select id="renderQuality" class="select">
+              <option value="high" selected>High</option>
+              <option value="medium">Medium</option>
+              <option value="low">Low</option>
+            </select>
+          </label>
 
-            <div class="control-section">
-                <h3>🎨 Внешний вид</h3>
-                <div class="control-group">
-                    <label for="waterLevel">Уровень воды:</label>
-                    <input type="range" id="waterLevel" min="0" max="100" value="15">
-                    <span id="waterLevelValue">15%</span>
-                </div>
-                <div class="control-group">
-                    <label for="colorIntensity">Интенсивность цветов:</label>
-                    <input type="range" id="colorIntensity" min="50" max="200" value="100">
-                    <span id="colorIntensityValue">100%</span>
-                </div>
-                <div class="view-controls">
-                    <label>Режим:</label>
-                    <button id="viewSolid" class="active">Текстура</button>
-                    <button id="viewWireframe">Сетка</button>
-                </div>
-            </div>
+          <label class="field">
+            <span class="label">Anti-aliasing</span>
+            <select id="antiAliasing" class="select">
+              <option value="on" selected>On</option>
+              <option value="off">Off</option>
+            </select>
+          </label>
+        </section>
 
-            <div class="control-section">
-                <h3>💾 Экспорт</h3>
-                <button id="export">📥 Экспорт высот</button>
-                <button id="screenshot">📸 Снимок</button>
-            </div>
-        </div>
+        <section class="panel editor-panel">
+          <h2 class="panel-title">Редактор</h2>
 
-        <div class="loading" id="loading">
-            <div class="loading-spinner"></div>
+          <div class="tool-buttons">
+            <button id="toolSmooth" class="btn tool-btn">Сгладить</button>
+            <button id="toolRaise" class="btn tool-btn">Поднять</button>
+            <button id="toolLower" class="btn tool-btn">Опустить</button>
+            <button id="toolReset" class="btn tool-btn">Сброс</button>
+          </div>
+
+          <label class="field">
+            <span class="label">Brush size</span>
+            <input id="brushSize" type="range" min="1" max="100" value="10">
+            <div class="value" id="brushSizeValue">10</div>
+          </label>
+
+          <label class="field">
+            <span class="label">Brush strength</span>
+            <input id="brushStrength" type="range" min="1" max="100" value="30">
+            <div class="value" id="brushStrengthValue">30%</div>
+          </label>
+
+          <div id="currentTool" class="current-tool">Инструмент: выбор</div>
+        </section>
+      </aside>
+
+      <section class="viewer" aria-label="3D просмотр">
+        <div id="threeContainer" class="three-container" role="application" aria-label="Three.js canvas"></div>
+
+        <div id="loading" class="loading" aria-hidden="true">
+          <div class="loading-inner">
             <div class="loading-text">Загрузка...</div>
-            <div class="loading-progress" id="loadingProgress">0%</div>
+            <div id="loadingProgress" class="loading-progress">0%</div>
+          </div>
         </div>
+      </section>
+    </main>
 
-        <div class="visualization">
-            <div class="canvas-container">
-                <div id="threeContainer"></div>
-                <div class="tool-info" id="toolInfo">
-                    <div>🔄 Alt+ЛКМ: Вращать камеру</div>
-                    <div>🔍 Колесо: Масштаб</div>
-                    <div>📱 ПКМ: Панорамирование</div>
-                </div>
-                <div class="legend">
-                    <span>🟦 Вода</span>
-                    <span>🟨 Песок</span>
-                    <span>🟩 Трава</span>
-                    <span>🟫 Земля</span>
-                    <span>⬜ Скалы</span>
-                    <span>❄️ Снег</span>
-                </div>
-            </div>
-            
-            <div class="stats">
-                <div id="minHeight">Мин: 0.00</div>
-                <div id="maxHeight">Макс: 0.00</div>
-                <div id="vertexCount">Вершины: 0</div>
-                <div id="algorithmInfo">Алгоритм: Гибридный</div>
-                <div id="generationTime">Время: 0с</div>
-            </div>
-        </div>
-    </div>
+    <footer class="footer">
+      <div>© Проект генератора ландшафта</div>
+      <div class="footer-links">
+        <a href="#" id="helpLink">Помощь</a>
+      </div>
+    </footer>
+  </div>
 
-    <script src="perlin.js"></script>
-    <script src="diamondSquare.js"></script>
-    <script src="erosion.js"></script>
-    <script src="threeRenderer.js"></script>
-    <script src="main.js"></script>
+  <!-- Скрипты (локальные) -->
+  <script src="perlin.js"></script>
+  <script src="diamondSquare.js"></script>
+  <script src="erosion.js"></script>
+  <script src="textureLoader.js"></script>
+  <script src="threeRenderer.js"></script>
+  <script src="main.js"></script>
+  <script src="terrainEditor.js"></script>
 </body>
 </html>

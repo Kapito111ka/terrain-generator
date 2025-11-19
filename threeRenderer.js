@@ -596,6 +596,6 @@ class ThreeRenderer {
             console.warn('Ошибка при dispose ThreeRenderer:', e);
         }
 
-        this.isInitialized = false;
+        this.isInitialized = false;    
     }
 }
