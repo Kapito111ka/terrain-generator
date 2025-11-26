@@ -28,6 +28,7 @@ class TerrainGenerator {
         this.initializeEventListeners();
         this.initializeThreeJS();
         this.setupQualityControls();
+         this.setupTextureScaleUI();
 
         window.addEventListener('resize', () => {
             if (this.threeRenderer) this.threeRenderer.onResize();

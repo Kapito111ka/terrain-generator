@@ -330,8 +330,20 @@ class ThreeRenderer {
             roughness: 1.0,
             metalness: 0.0,
         });
-
+        material.userData.grassScale = 20.0;
+        material.userData.dirtScale  = 15.0;
+        material.userData.rockScale  = 12.0;
+        material.userData.cliffScale = 10.0;
+        material.userData.sandScale  = 18.0;
+        material.userData.snowScale  = 14.0;
         material.onBeforeCompile = (shader) => {
+            shader.uniforms.grassScale = { value: material.userData.grassScale };
+            shader.uniforms.dirtScale  = { value: material.userData.dirtScale };
+            shader.uniforms.rockScale  = { value: material.userData.rockScale };
+            shader.uniforms.cliffScale = { value: material.userData.cliffScale };
+            shader.uniforms.sandScale  = { value: material.userData.sandScale };
+            shader.uniforms.snowScale  = { value: material.userData.snowScale };
+
             shader.uniforms.grassColorMap = { value: this.materials.grass.color };
             shader.uniforms.dirtColorMap  = { value: this.materials.dirt.color };
             shader.uniforms.rockColorMap  = { value: this.materials.rock.color };
@@ -399,6 +411,13 @@ class ThreeRenderer {
                 `#include <map_pars_fragment>`,
                 `
                 #include <map_pars_fragment>
+                
+                uniform float grassScale;
+                uniform float dirtScale;
+                uniform float rockScale;
+                uniform float cliffScale;
+                uniform float sandScale;
+                uniform float snowScale;
 
                 varying vec3 vWorldPos;
                 varying vec3 vWorldNormal;
@@ -503,12 +522,12 @@ class ThreeRenderer {
                 // ------------------------------------------------
                 // Получаем UV с Parallax Mapping
                 // ------------------------------------------------
-                vec2 sandUV  = parallaxUV(sandHeightMap,  baseUV, viewDir);
-                vec2 grassUV = parallaxUV(grassHeightMap, baseUV, viewDir);
-                vec2 dirtUV  = parallaxUV(dirtHeightMap,  baseUV, viewDir);
-                vec2 rockUV  = parallaxUV(rockHeightMap,  baseUV, viewDir);
-                vec2 cliffUV = parallaxUV(cliffHeightMap, baseUV, viewDir);
-                vec2 snowUV  = parallaxUV(snowHeightMap,  baseUV, viewDir);
+                vec2 sandUV  = parallaxUV(sandHeightMap,  baseUV * sandScale,  viewDir);
+                vec2 grassUV = parallaxUV(grassHeightMap, baseUV * grassScale, viewDir);
+                vec2 dirtUV  = parallaxUV(dirtHeightMap,  baseUV * dirtScale,  viewDir);
+                vec2 rockUV  = parallaxUV(rockHeightMap,  baseUV * rockScale,  viewDir);
+                vec2 cliffUV = parallaxUV(cliffHeightMap, baseUV * cliffScale, viewDir);
+                vec2 snowUV  = parallaxUV(snowHeightMap,  baseUV * snowScale,  viewDir);
 
                 // ------------------------------------------------
                 // Color blending
