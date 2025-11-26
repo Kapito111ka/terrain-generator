@@ -44,10 +44,17 @@ class TerrainGenerator {
                 return;
             }
 
-            this.threeRenderer = new ThreeRenderer('threeContainer');
+            // создаём загрузчик PBR-текстур
+            this.textureLoader = new TextureLoaderUE();
+            await this.textureLoader.loadAllTextures();
+            console.log('PBR текстуры загружены!');
 
-            // Дадим рендереру стартануть, потом сгенерируем террейн
+            // создаём UE-рендерер и передаём ему loader
+            this.threeRenderer = new ThreeRenderer('threeContainer', this.textureLoader);
+
+            // Стартуем генерацию террейна
             setTimeout(() => this.generateTerrain(), 800);
+
         } catch (error) {
             console.error('Ошибка инициализации ThreeRenderer:', error);
         }
@@ -237,8 +244,12 @@ class TerrainGenerator {
         const heightScale = this.getNumberValue('heightScale', 50);
         const waterLevel = this.getNumberValue('waterLevel', 15) / 100;
 
+        // В UE-рендерере нет updateExistingTerrain, поэтому просто
+        // пересоздаём меш с новым heightScale на основе текущего heightmap
         if (this.threeRenderer && this.threeRenderer.isInitialized) {
-            this.threeRenderer.updateExistingTerrain(this.currentHeightmap, heightScale, waterLevel);
+            const size = Math.sqrt(this.currentHeightmap.length) | 0;
+            const lod = this.getLODValue();
+            this.threeRenderer.createTerrain(this.currentHeightmap, size, size, heightScale, lod);
         }
 
         this.updateStats(this.currentHeightmap, performance.now()); // просто чтобы обновить числа
@@ -344,7 +355,7 @@ class TerrainGenerator {
 
             if (this.threeRenderer && this.threeRenderer.isInitialized) {
                 const lod = this.getLODValue();
-                this.threeRenderer.createHighResolutionTerrain(heightmap, size, size, heightScale, lod);
+                this.threeRenderer.createTerrain(heightmap, size, size, heightScale, lod);
             }
 
             this.currentHeightmap = heightmap;
@@ -353,17 +364,11 @@ class TerrainGenerator {
 
             if (showProgress) {
                 this.updateProgress(100, 'Готово!');
-                setTimeout(() => {
-                    if (this.threeRenderer) this.threeRenderer.showLoading(false);
-                }, 500);
             }
 
             console.log('Террейн сгенерирован успешно с улучшенными алгоритмами');
         } catch (error) {
             console.error('Ошибка генерации террейна:', error);
-            if (showProgress && this.threeRenderer) {
-                this.threeRenderer.showLoading(false);
-            }
         } finally {
             this.isGenerating = false;
         }
@@ -534,9 +539,8 @@ class TerrainGenerator {
     // ---------------- UI-СТАТИСТИКА / STATUS ----------------
 
     updateProgress(percent, text) {
-        if (this.threeRenderer) {
-            this.threeRenderer.showLoading(true, text || 'Загрузка...', percent);
-        }
+        // Больше не дергаем threeRenderer.showLoading, чтобы не падало
+        console.log(`Прогресс: ${percent}% — ${text || 'Загрузка...'}`);
     }
 
     updateStats(heightmap, startTime) {
@@ -564,7 +568,6 @@ class TerrainGenerator {
         }
     }
 
-    // 💡 ВОТ ЭТОТ МЕТОД — КЛЮЧЕВОЙ, ЧТОБЫ НЕ БЫЛО ОШИБКИ this.updateElementText
     updateElementText(elementId, text) {
         const el = document.getElementById(elementId);
         if (el) el.textContent = text;
@@ -654,8 +657,19 @@ class TerrainGenerator {
     }
 
     takeScreenshot() {
-        if (!this.threeRenderer) return;
-        this.threeRenderer.takeScreenshot();
+        if (!this.threeRenderer || !this.threeRenderer.renderer) return;
+
+        const renderer = this.threeRenderer.renderer;
+        renderer.domElement.toBlob((blob) => {
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `terrain_screenshot_${Date.now()}.png`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(url);
+        }, 'image/png');
     }
 
     getLODValue() {
@@ -668,12 +682,8 @@ class TerrainGenerator {
     }
 
     setViewMode(mode) {
-        if (!this.threeRenderer) return;
-        if (mode === 'wireframe') {
-            this.threeRenderer.setViewMode('wireframe');
-        } else {
-            this.threeRenderer.setViewMode('solid');
-        }
+        if (!this.threeRenderer || !this.threeRenderer.terrain) return;
+        this.threeRenderer.terrain.material.wireframe = (mode === 'wireframe');
     }
 }
 
