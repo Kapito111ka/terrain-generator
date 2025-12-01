@@ -88,7 +88,49 @@ class TerrainGenerator {
 
         console.log('Обработчики событий инициализированы');
     }
+setupTextureScaleUI() {
+        const win     = document.getElementById("textureScaleWindow");
+        const openBtn = document.getElementById("openTextureScale");
+        const closeBtn = document.getElementById("tsCloseBtn");
 
+        // если HTML ещё не добавлен — просто выходим, чтобы не было ошибок
+        if (!win || !openBtn || !closeBtn) {
+            console.warn("Texture Scale UI не найден в DOM (textureScaleWindow / openTextureScale / tsCloseBtn)");
+            return;
+        }
+
+        openBtn.onclick  = () => win.style.display = "block";
+        closeBtn.onclick = () => win.style.display = "none";
+
+        const sliders = [
+            { id: "tsGrass", uni: "grassScale" },
+            { id: "tsDirt",  uni: "dirtScale" },
+            { id: "tsRock",  uni: "rockScale" },
+            { id: "tsCliff", uni: "cliffScale" },
+            { id: "tsSand",  uni: "sandScale" },
+            { id: "tsSnow",  uni: "snowScale" },
+        ];
+
+        sliders.forEach(s => {
+            const slider = document.getElementById(s.id);
+            const val    = document.getElementById(s.id + "Val");
+
+            if (!slider || !val) return;
+
+            val.textContent = slider.value;
+
+            slider.oninput = () => {
+                val.textContent = slider.value;
+
+                if (this.threeRenderer && this.threeRenderer.terrain) {
+                    const mat = this.threeRenderer.terrain.material;
+                    if (!mat.userData) mat.userData = {};
+                    mat.userData[s.uni] = parseFloat(slider.value);
+                    mat.needsUpdate = true;
+                }
+            };
+        });
+    }
     setupQualityControls() {
         const qualitySelect = document.getElementById('renderQuality');
         const antiAliasingSelect = document.getElementById('antiAliasing');
@@ -245,12 +287,11 @@ class TerrainGenerator {
         const heightScale = this.getNumberValue('heightScale', 50);
         const waterLevel = this.getNumberValue('waterLevel', 15) / 100;
 
-        // В UE-рендерере нет updateExistingTerrain, поэтому просто
-        // пересоздаём меш с новым heightScale на основе текущего heightmap
         if (this.threeRenderer && this.threeRenderer.isInitialized) {
             const size = Math.sqrt(this.currentHeightmap.length) | 0;
             const lod = this.getLODValue();
             this.threeRenderer.createTerrain(this.currentHeightmap, size, size, heightScale, lod);
+            this.threeRenderer.updateWater(size, size, heightScale, waterLevel);
         }
 
         this.updateStats(this.currentHeightmap, performance.now()); // просто чтобы обновить числа
@@ -306,6 +347,7 @@ class TerrainGenerator {
 
             let heightmap;
 
+            // -------- базовый рельеф (Perlin / Diamond / Hybrid) --------
             switch (algorithm) {
                 case 'perlin':
                     heightmap = this.generatePerlinHeightmap(size, scale, octaves, roughness);
@@ -321,10 +363,17 @@ class TerrainGenerator {
                     break;
             }
 
+            if (showProgress) this.updateProgress(30, 'Формирование горных массивов...');
+
+            // 🔥 НОВОЕ: склеиваем пики в горные массивы
+            heightmap = this.shapeMountains(heightmap, size, 0.62, 0.55);
+
             if (showProgress) this.updateProgress(40, 'Базовый рельеф создан.');
 
+            // волновая коррекция
             heightmap = this.applyFinalWaveCorrection(heightmap, size, 0.12);
 
+            // -------- сглаживание + лапласиан --------
             if (smoothing > 0) {
                 if (showProgress) this.updateProgress(50, 'Сглаживание рельефа...');
                 heightmap = this.applyAdvancedSmoothing(heightmap, size, smoothing / 100);
@@ -334,12 +383,14 @@ class TerrainGenerator {
                 laplacianSmooth(heightmap, size, lapIter, lapAlpha);
             }
 
+            // -------- эрозия --------
             if (erosionIterations > 0) {
                 if (showProgress) this.updateProgress(60, 'Эрозия (размывание склонов)...');
                 const limitedErosion = Math.min(erosionIterations, 4000);
                 heightmap = this.erosion.applyErosion(heightmap, size, size, limitedErosion, 0.4);
             }
 
+            // -------- финальное лёгкое сглаживание --------
             if (smoothing > 0) {
                 if (showProgress) this.updateProgress(75, 'Финальное сглаживание...');
                 heightmap = this.applyLightSmoothing(heightmap, size, 0.06);
@@ -350,6 +401,7 @@ class TerrainGenerator {
             }
 
             if (showProgress) this.updateProgress(85, 'Нормализация высот...');
+
             this.normalizeHeightmap(heightmap);
 
             if (showProgress) this.updateProgress(90, 'Создание 3D-мешка...');
@@ -357,6 +409,10 @@ class TerrainGenerator {
             if (this.threeRenderer && this.threeRenderer.isInitialized) {
                 const lod = this.getLODValue();
                 this.threeRenderer.createTerrain(heightmap, size, size, heightScale, lod);
+
+                // уровень воды из слайдера (0..1)
+                const waterLevel = this.getNumberValue('waterLevel', 15) / 100;
+                this.threeRenderer.updateWater(size, size, heightScale, waterLevel);
             }
 
             this.currentHeightmap = heightmap;
@@ -439,7 +495,47 @@ class TerrainGenerator {
         console.log('Коррекция волн: применено', fixes, 'исправлений');
         return out;
     }
+shapeMountains(heightmap, size, threshold = 0.62, merge = 0.55) {
+        const out = new Float32Array(heightmap.length);
+        const n = size;
 
+        for (let y = 0; y < n; y++) {
+            for (let x = 0; x < n; x++) {
+                const i = y * n + x;
+                const h = heightmap[i];
+
+                // среднее по окрестности 5x5
+                let sum = 0, count = 0;
+                for (let oy = -2; oy <= 2; oy++) {
+                    for (let ox = -2; ox <= 2; ox++) {
+                        const nx = x + ox, ny = y + oy;
+                        if (nx < 0 || nx >= n || ny < 0 || ny >= n) continue;
+                        sum += heightmap[ny * n + nx];
+                        count++;
+                    }
+                }
+
+                const avg = sum / count;
+                let v = h;
+
+                // высокогорье — тянем к среднему, чтобы вершины слипались в массив
+                if (h > threshold) {
+                    const t = (h - threshold) / (1.0 - threshold);     // 0..1
+                    const influence = t * merge;                       // сила влияния
+                    v = h * (1.0 - influence) + avg * influence;
+                }
+
+                // одиночный пик среди более низкой среды — прижимаем
+                if (h > threshold * 0.85 && avg < threshold * 0.65) {
+                    v = h * 0.4 + avg * 0.6;
+                }
+
+                out[i] = v;
+            }
+        }
+
+        return out;
+    }
     applyAdvancedSmoothing(heightmap, size, intensity = 0.3) {
         const n = size;
         const tmp = new Float32Array(heightmap.length);

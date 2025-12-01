@@ -9,6 +9,9 @@ class ThreeRenderer {
         this.controls = null;
         this.terrain = null;
 
+        this.water = null;
+        this.waterMaterial = null;
+
         this.isInitialized = false;
         this.lights = [];
 
@@ -18,8 +21,11 @@ class ThreeRenderer {
 
         this.materials = {}; // PBR materials
 
+        this.clock = new THREE.Clock(); // для анимации воды
+
         this.init();
     }
+
 
     async init() {
         try {
@@ -556,11 +562,110 @@ class ThreeRenderer {
 
         return material;
     }
+
     // ----------------------------------------------------------
+    // ВОДА: динамическая, с волнами и френелем
+    // ----------------------------------------------------------
+    updateWater(width, height, heightScale, waterLevel) {
+        if (!this.isInitialized) return;
+
+        const y = heightScale * waterLevel; // waterLevel 0..1
+
+        if (!this.waterMaterial) {
+            // uniforms для шейдера воды
+            const uniforms = {
+                uTime:      { value: 0.0 },
+                uDeepColor: { value: new THREE.Color(0x04101f) },  // глубокая вода
+                uShallowColor: { value: new THREE.Color(0x1b5c8a) }, // мелко
+                uFoamColor: { value: new THREE.Color(0xffffff) },
+                uOpacity:   { value: 0.8 }
+            };
+
+            this.waterMaterial = new THREE.ShaderMaterial({
+                uniforms,
+                transparent: true,
+                depthWrite: false,
+                side: THREE.DoubleSide,
+                vertexShader: `
+                    varying vec2 vUv;
+                    varying vec3 vWorldPos;
+
+                    void main() {
+                        vUv = uv;
+                        vec4 worldPos = modelMatrix * vec4(position, 1.0);
+                        vWorldPos = worldPos.xyz;
+                        gl_Position = projectionMatrix * viewMatrix * worldPos;
+                    }
+                `,
+                fragmentShader: `
+                    uniform float uTime;
+                    uniform vec3 uDeepColor;
+                    uniform vec3 uShallowColor;
+                    uniform vec3 uFoamColor;
+                    uniform float uOpacity;
+
+                    varying vec2 vUv;
+                    varying vec3 vWorldPos;
+
+                    void main() {
+                        // направление камеры
+                        vec3 viewDir = normalize(cameraPosition - vWorldPos);
+
+                        // фейковые волны
+                        float wave1 = sin(vUv.x * 40.0 + uTime * 0.7) * 0.04;
+                        float wave2 = sin(vUv.y * 30.0 - uTime * 0.5) * 0.03;
+                        float wave3 = sin((vUv.x + vUv.y) * 25.0 + uTime * 0.9) * 0.02;
+                        float waves = wave1 + wave2 + wave3;
+
+                        // базовая глубина (можно потом завязать на real depth)
+                        float depthFactor = 0.6 + waves; // 0..1
+                        depthFactor = clamp(depthFactor, 0.0, 1.0);
+
+                        vec3 waterColor = mix(uDeepColor, uShallowColor, depthFactor);
+
+                        // френель: сильнее по краям
+                        float fresnel = pow(1.0 - max(dot(viewDir, vec3(0.0, 1.0, 0.0)), 0.0), 3.0);
+
+                        // пенка на пиках волн
+                        float foam = smoothstep(0.045, 0.08, abs(waves));
+                        vec3 foamColor = uFoamColor * foam * 0.6;
+
+                        vec3 finalColor = waterColor + foamColor;
+                        finalColor += fresnel * 0.15; // чуть высветляем края
+
+                        gl_FragColor = vec4(finalColor, uOpacity);
+                    }
+                `
+            });
+
+            // создаём меш воды
+            const geom = new THREE.PlaneGeometry(width * 3, height * 3, 1, 1);
+            const water = new THREE.Mesh(geom, this.waterMaterial);
+            water.rotation.x = -Math.PI / 2;
+            water.position.set(-width / 2, y, -height / 2);
+            water.receiveShadow = false;
+
+            this.scene.add(water);
+            this.water = water;
+        } else {
+            // просто обновляем положение/размер
+            this.water.position.y = y;
+            this.water.position.x = -width / 2;
+            this.water.position.z = -height / 2;
+
+            this.water.geometry.dispose();
+            this.water.geometry = new THREE.PlaneGeometry(width * 3, height * 3, 1, 1);
+        }
+    }
+
     // Анимация
-    // ----------------------------------------------------------
-    animate() {
+       animate() {
         requestAnimationFrame(() => this.animate());
+
+        const dt = this.clock.getDelta();
+        if (this.waterMaterial && this.waterMaterial.uniforms && this.waterMaterial.uniforms.uTime) {
+            this.waterMaterial.uniforms.uTime.value += dt;
+        }
 
         if (this.controls) {
             this.controls.update();
@@ -615,21 +720,32 @@ class ThreeRenderer {
     // Уничтожение сцены и рендера
     // ----------------------------------------------------------
     dispose() {
-        console.log("Удаление ThreeRenderer...");
+    console.log("Удаление ThreeRenderer...");
 
-        if (this.terrain) {
-            this.scene.remove(this.terrain);
-            if (this.terrain.geometry) this.terrain.geometry.dispose();
-            if (this.terrain.material) this.terrain.material.dispose();
-        }
+    if (this.terrain) {
+        this.scene.remove(this.terrain);
+        if (this.terrain.geometry) this.terrain.geometry.dispose();
+        if (this.terrain.material) this.terrain.material.dispose();
+    }
+    
+    if (this.water) {
 
-        this.lights.forEach(l => this.scene.remove(l));
-        this.lights = [];
+        this.scene.remove(this.water);
+        if (this.water.geometry) this.water.geometry.dispose();
+        if (this.water.material) this.water.material.dispose();
+        this.water = null;
+        this.waterMaterial = null;
+    }
 
-        if (this.renderer) {
-            this.renderer.dispose();
-        }
+    this.lights.forEach(l => this.scene.remove(l));
+    this.lights = [];
+
+    if (this.renderer) {
+        this.renderer.dispose();
+    }
 
         this.isInitialized = false;
     }
+
+
 }
