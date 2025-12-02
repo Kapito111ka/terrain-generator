@@ -352,18 +352,45 @@ setupTextureScaleUI() {
                 case 'perlin':
                     heightmap = this.generatePerlinHeightmap(size, scale, octaves, roughness);
                     break;
+
                 case 'diamond':
                     heightmap = this.generateDiamondSquareHeightmap(size, dsRoughness);
                     break;
+
                 case 'hybrid':
                 default:
                     heightmap = this.generateHybridHeightmap(
-                        size, scale, octaves, roughness, dsRoughness, hybridWeight
+                        size,
+                        scale,
+                        octaves,
+                        roughness,
+                        dsRoughness,
+                        hybridWeight
                     );
                     break;
             }
 
-            if (showProgress) this.updateProgress(30, 'Формирование горных массивов...');
+            if (showProgress)
+                this.updateProgress(25, 'Базовый рельеф создан.');
+
+            // =====================================================
+            // 🔥 ЧАСТЬ 2.2 — горные массивы + термальная эрозия
+            // =====================================================
+
+            // сглаживаем пики, объединяем вершины в хребты
+            heightmap = this.shapeMountains(heightmap, size, 0.6, 0.55);
+
+            if (showProgress)
+                this.updateProgress(30, 'Формирование горных массивов...');
+
+            // убираем "иголки", делаем склон реалистичным
+            heightmap = this.applyThermalErosion(heightmap, size, 10, 0.02, 0.5);
+
+            if (showProgress)
+                this.updateProgress(35, 'Термальная эрозия...');
+
+            // =====================================================
+
 
             // 🔥 НОВОЕ: склеиваем пики в горные массивы
             heightmap = this.shapeMountains(heightmap, size, 0.62, 0.55);
@@ -434,8 +461,8 @@ setupTextureScaleUI() {
     // ---------------- ВСПОМОГАТЕЛЬНЫЕ ГЕНЕРАТОРЫ ----------------
 
     generatePerlinHeightmap(size, scale, octaves, roughness) {
-        const persistence = 0.5;
-        const lacunarity = 2.0;
+        const persistence = 0.45;        // чуть меньше — плавнее
+        const lacunarity  = 1.9;         // немного меньше частота
         console.log('Генерация шума с улучшенными параметрами:', { scale, octaves, persistence, lacunarity });
         return this.perlin.generateHighResolutionHeightmap(
             size, size, scale, octaves, persistence, lacunarity
@@ -447,19 +474,48 @@ setupTextureScaleUI() {
         return this.diamondSquare.generate(size, dsRoughness);
     }
 
+    // Гибрид: Perlin + Ridged Perlin + Diamond-Square
     generateHybridHeightmap(size, scale, octaves, roughness, dsRoughness, hybridWeight) {
-        console.log('Генерация гибридного ландшафта...');
-        const perlinMap = this.generatePerlinHeightmap(size, scale, octaves, roughness);
+        console.log('Генерация гибридного ландшафта (ridged)...');
+
+        const perlinMap  = this.generatePerlinHeightmap(size, scale, octaves, roughness);
         const diamondMap = this.generateDiamondSquareHeightmap(size, dsRoughness);
 
         const result = new Float32Array(size * size);
+
+        // сколько "хребтовости" добавить в перлин
+        const ridgeWeight = 0.40;   // было 0.55, сделали мягче
+
         for (let i = 0; i < result.length; i++) {
-            const p = perlinMap[i] * 0.85;
+            const p = perlinMap[i];
+
+            // Ridged noise: пики по краям, провал в середине
+            let r = 1.0 - Math.abs(2.0 * p - 1.0); // 0..1, хребты
+
+            // немного поджимаем, чтобы не было супер-плоско
+            r = Math.pow(r, 0.9);
+
+            // смешиваем обычный перлин и ridged
+            const mountainBase = p * (1.0 - ridgeWeight) + r * ridgeWeight;
+
+            // чуть усилим контраст высот для горной базы
+            const mountainShaped = Math.pow(mountainBase, 1.12);
+
             const d = diamondMap[i];
-            result[i] = Math.min(1, Math.max(0, p * (1 - hybridWeight) + d * hybridWeight));
+
+            // финальный гибрид: низкочастотная горная база + крупные формы Diamond
+            let h = mountainShaped * (1.0 - hybridWeight) + d * hybridWeight;
+
+            // clamp 0..1
+            if (h < 0.0) h = 0.0;
+            if (h > 1.0) h = 1.0;
+
+            result[i] = h;
         }
+
         return result;
     }
+
 
     // ---------------- КОРРЕКЦИИ / СГЛАЖИВАНИЕ ----------------
 
@@ -495,7 +551,9 @@ setupTextureScaleUI() {
         console.log('Коррекция волн: применено', fixes, 'исправлений');
         return out;
     }
-shapeMountains(heightmap, size, threshold = 0.62, merge = 0.55) {
+        // ---------------- ФОРМИРОВАНИЕ ГОРНЫХ МАССИВОВ ----------------
+    // Склеивает кучу острых пиков в более цельные горы / хребты
+    shapeMountains(heightmap, size, threshold = 0.6, merge = 0.55) {
         const out = new Float32Array(heightmap.length);
         const n = size;
 
@@ -520,8 +578,8 @@ shapeMountains(heightmap, size, threshold = 0.62, merge = 0.55) {
 
                 // высокогорье — тянем к среднему, чтобы вершины слипались в массив
                 if (h > threshold) {
-                    const t = (h - threshold) / (1.0 - threshold);     // 0..1
-                    const influence = t * merge;                       // сила влияния
+                    const t = (h - threshold) / (1.0 - threshold);   // 0..1
+                    const influence = t * merge;                     // сила влияния
                     v = h * (1.0 - influence) + avg * influence;
                 }
 
@@ -536,6 +594,101 @@ shapeMountains(heightmap, size, threshold = 0.62, merge = 0.55) {
 
         return out;
     }
+
+    // ---------------- ТЕРМАЛЬНАЯ ЭРОЗИЯ ----------------
+    // Срезает слишком крутые локальные "шипы" и smears материал по склону
+    applyThermalErosion(heightmap, size, iterations = 10, talus = 0.02, strength = 0.5) {
+        const n = size;
+        const tmp = new Float32Array(heightmap.length);
+
+        for (let it = 0; it < iterations; it++) {
+            tmp.set(heightmap);
+
+            for (let y = 1; y < n - 1; y++) {
+                for (let x = 1; x < n - 1; x++) {
+                    const i = y * n + x;
+                    const h = heightmap[i];
+
+                    let totalDelta = 0;
+                    const deltas = [0, 0, 0, 0];
+                    const idxs   = [
+                        (y - 1) * n + x,     // up
+                        (y + 1) * n + x,     // down
+                        y * n + (x - 1),     // left
+                        y * n + (x + 1)      // right
+                    ];
+
+                    // считаем перепады высоты к соседям
+                    for (let k = 0; k < 4; k++) {
+                        const nh = heightmap[idxs[k]];
+                        const dh = h - nh;
+                        if (dh > talus) {               // слишком крутой склон
+                            const d = dh - talus;
+                            deltas[k] = d;
+                            totalDelta += d;
+                        }
+                    }
+
+                    if (totalDelta > 0) {
+                        let removed = 0;
+                        for (let k = 0; k < 4; k++) {
+                            if (deltas[k] <= 0) continue;
+                            const share = (deltas[k] / totalDelta) * strength * talus;
+                            tmp[i]       -= share;
+                            tmp[idxs[k]] += share;
+                            removed      += share;
+                        }
+                    }
+                }
+            }
+
+            heightmap.set(tmp);
+        }
+
+        return heightmap;
+    }
+
+    shapeMountains(heightmap, size, threshold = 0.62, merge = 0.55) {
+            const out = new Float32Array(heightmap.length);
+            const n = size;
+
+            for (let y = 0; y < n; y++) {
+                for (let x = 0; x < n; x++) {
+                    const i = y * n + x;
+                    const h = heightmap[i];
+
+                    // среднее по окрестности 5x5
+                    let sum = 0, count = 0;
+                    for (let oy = -2; oy <= 2; oy++) {
+                        for (let ox = -2; ox <= 2; ox++) {
+                            const nx = x + ox, ny = y + oy;
+                            if (nx < 0 || nx >= n || ny < 0 || ny >= n) continue;
+                            sum += heightmap[ny * n + nx];
+                            count++;
+                        }
+                    }
+
+                    const avg = sum / count;
+                    let v = h;
+
+                    // высокогорье — тянем к среднему, чтобы вершины слипались в массив
+                    if (h > threshold) {
+                        const t = (h - threshold) / (1.0 - threshold);     // 0..1
+                        const influence = t * merge;                       // сила влияния
+                        v = h * (1.0 - influence) + avg * influence;
+                    }
+
+                    // одиночный пик среди более низкой среды — прижимаем
+                    if (h > threshold * 0.85 && avg < threshold * 0.65) {
+                        v = h * 0.4 + avg * 0.6;
+                    }
+
+                    out[i] = v;
+                }
+            }
+
+            return out;
+        }
     applyAdvancedSmoothing(heightmap, size, intensity = 0.3) {
         const n = size;
         const tmp = new Float32Array(heightmap.length);

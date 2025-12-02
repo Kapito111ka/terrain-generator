@@ -504,26 +504,59 @@ class ThreeRenderer {
                 vec2 baseUV = vWorldPos.xz / terrainSize;
                 vec3 viewDir = normalize(cameraPosition - vWorldPos);
 
-                // наклон поверхности
+                // наклон поверхности: 0 = плоско, 1 = почти вертикально
                 float slope = 1.0 - abs(dot(vWorldNormal, vec3(0.0, 1.0, 0.0)));
 
-                // нормированная высота
-                float h = clamp(vWorldPos.y / heightScale, 0.0, 1.0);
+                // нормированная высота (чуть растягиваем диапазон)
+                float h = clamp(vWorldPos.y / (heightScale * 0.95), 0.0, 1.0);
+
+                // вспомогательные маски по высоте
+                float hLow  = smoothstep(0.0, 0.25, h);   // низины
+                float hMid  = smoothstep(0.2, 0.7,  h);   // средние высоты
+                float hHigh = smoothstep(0.55, 1.0, h);   // высокогорье
 
                 // ------------------------------------------------
-                // Вычисление весов (Unreal-style blending)
+                // Веса слоёв (более "горная" логика)
                 // ------------------------------------------------
-                float wSand  = smoothstep(0.0, 0.08, 1.0 - h);
-                float wGrass = smoothstep(0.0, 0.35, h) * (1.0 - slope);
-                float wDirt  = smoothstep(0.15, 0.35, h);
-                float wRock  = smoothstep(0.25, 0.85, slope);
-                float wCliff = smoothstep(0.45, 1.0, slope);
-                float wSnow  = smoothstep(0.7, 1.0, h);
 
-                // normalize
+                // песок — у воды и в низинах, почти без наклона
+                float wSand = hLow * (1.0 - slope) * 0.9;
+
+                // трава — средние высоты, пологие склоны
+                float wGrass = hMid * (1.0 - slope * 0.8);
+
+                // земля — переходы: от песка к траве и под скалами
+                float wDirt = mix(
+                    hLow * (0.4 + 0.6 * slope),    // низкие, чуть наклонённые участки
+                    (1.0 - hHigh) * slope,         // под скалами
+                    0.5
+                );
+
+                // скалы — крутые склоны на средней и высокой высоте
+                float wRock = hMid * hHigh * slope;
+
+                // отвесные склоны/обрывы — очень крутой склон в верхней зоне
+                float wCliff = pow(slope, 2.0) * hHigh;
+
+                // снег — высокогорье, преимущественно на относительных плато (не на стенках)
+                float wSnow = pow(hHigh, 2.0) * (1.0 - slope * 0.7);
+
+                // небольшая стабилизация, чтобы не было нулевой суммы
+                wSand  = max(wSand,  0.0001);
+                wGrass = max(wGrass, 0.0001);
+                wDirt  = max(wDirt,  0.0001);
+                wRock  = max(wRock,  0.0001);
+                wCliff = max(wCliff, 0.0001);
+                wSnow  = max(wSnow,  0.0001);
+
+                // нормализация
                 float sumW = wSand + wGrass + wDirt + wRock + wCliff + wSnow;
-                wSand /= sumW; wGrass /= sumW; wDirt /= sumW;
-                wRock /= sumW; wCliff /= sumW; wSnow /= sumW;
+                wSand  /= sumW;
+                wGrass /= sumW;
+                wDirt  /= sumW;
+                wRock  /= sumW;
+                wCliff /= sumW;
+                wSnow  /= sumW;
 
                 // ------------------------------------------------
                 // Получаем UV с Parallax Mapping
@@ -545,12 +578,12 @@ class ThreeRenderer {
                 vec3 colCliff = texture2D(cliffColorMap, cliffUV).rgb;
                 vec3 colSnow  = texture2D(snowColorMap,  snowUV).rgb;
 
-                vec3 blended = colSand  * wSand +
-                               colGrass * wGrass +
-                               colDirt  * wDirt +
-                               colRock  * wRock +
-                               colCliff * wCliff +
-                               colSnow  * wSnow;
+                vec3 blended = colSand  * wSand  +
+                            colGrass * wGrass +
+                            colDirt  * wDirt  +
+                            colRock  * wRock  +
+                            colCliff * wCliff +
+                            colSnow  * wSnow;
 
                 // sRGB → linear
                 blended = pow(blended, vec3(2.2));
@@ -558,6 +591,7 @@ class ThreeRenderer {
                 diffuseColor.rgb *= blended;
                 `
             );
+
         };
 
         return material;
