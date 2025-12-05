@@ -673,7 +673,7 @@ class ThreeRenderer {
             });
 
             // создаём меш воды
-            const geom = new THREE.PlaneGeometry(width * 3, height * 3, 1, 1);
+            const geom = new THREE.PlaneGeometry(width, height, 1, 1);
             const water = new THREE.Mesh(geom, this.waterMaterial);
             water.rotation.x = -Math.PI / 2;
             water.position.set(-width / 2, y, -height / 2);
@@ -681,15 +681,15 @@ class ThreeRenderer {
 
             this.scene.add(water);
             this.water = water;
-        } else {
-            // просто обновляем положение/размер
-            this.water.position.y = y;
-            this.water.position.x = -width / 2;
-            this.water.position.z = -height / 2;
+            } else {
+                // просто обновляем положение/размер
+                this.water.position.y = y;
+                this.water.position.x = -width / 2;
+                this.water.position.z = -height / 2;
 
-            this.water.geometry.dispose();
-            this.water.geometry = new THREE.PlaneGeometry(width * 3, height * 3, 1, 1);
-        }
+                this.water.geometry.dispose();
+                this.water.geometry = new THREE.PlaneGeometry(width, height, 1, 1);
+            }
     }
 
     // Анимация
