@@ -190,51 +190,117 @@ setupTextureScaleUI() {
             console.warn(`Элемент с ID '${elementId}' не найден в DOM`);
         }
     }
+    bindRangeAndNumber(rangeId, numberId, param, mode) {
+        const rangeEl = document.getElementById(rangeId);
+        const numberEl = document.getElementById(numberId);
+
+        if (!rangeEl) {
+            console.warn(`Range '${rangeId}' not found`);
+            return;
+        }
+
+        const applyChange = (value) => {
+            const v = parseFloat(value);
+
+            if (numberEl) {
+                numberEl.value = v;
+            }
+
+            this.updateParameterValue(param, v);
+
+            if (mode === 'regenerate') {
+                this.scheduleRegeneration();
+            } else if (mode === 'apply') {
+                this.scheduleRealtimeUpdate();
+            }
+        };
+
+        // изменение слайдера
+        rangeEl.addEventListener('input', (e) => {
+            applyChange(e.target.value);
+        });
+
+        // изменение числа вручную
+        if (numberEl) {
+            numberEl.addEventListener('change', (e) => {
+                let v = parseFloat(e.target.value);
+
+                if (isNaN(v)) {
+                    v = parseFloat(rangeEl.value);
+                }
+
+                const min = parseFloat(rangeEl.min);
+                const max = parseFloat(rangeEl.max);
+
+                if (!isNaN(min)) v = Math.max(min, v);
+                if (!isNaN(max)) v = Math.min(max, v);
+
+                rangeEl.value = v;
+                applyChange(v);
+            });
+
+            // стартовая синхронизация
+            numberEl.value = rangeEl.value;
+        }
+
+        // Обновляем подпись один раз при инициализации
+        this.updateParameterValue(param, parseFloat(rangeEl.value));
+    }
 
     // ---------------- REALTIME-КОНТРОЛЫ ----------------
+
+        // ---------------- REALTIME-КОНТРОЛЫ ----------------
 
     setupRealtimeControls() {
         console.log('Настройка контролов реального времени.');
 
+        // Параметры, при изменении которых мы перегенерируем ландшафт
         const regenerationParams = [
-            'scale', 'octaves', 'roughness', 'erosionIterations', 'smoothing',
-            'dsRoughness', 'hybridWeight'
+            'scale',
+            'octaves',
+            'roughness',
+            'erosionIterations',
+            'smoothing',
+            'dsRoughness',
+            'hybridWeight'
         ];
 
+        regenerationParams.forEach((param) => {
+            this.bindRangeAndNumber(
+                param,
+                param + 'Value',
+                param,
+                'regenerate'
+            );
+        });
+
+        // Параметры, которые можно менять «на лету» без полной генерации
         const applyParams = ['heightScale', 'waterLevel', 'colorIntensity'];
 
-        regenerationParams.forEach((param) => {
-            const el = document.getElementById(param);
-            if (el) {
-                el.addEventListener('input', (e) => {
-                    this.updateParameterValue(param, e.target.value);
-                    this.scheduleRegeneration();
-                });
-            }
-        });
-
         applyParams.forEach((param) => {
-            const el = document.getElementById(param);
-            if (el) {
-                el.addEventListener('input', (e) => {
-                    this.updateParameterValue(param, e.target.value);
-                    this.scheduleRealtimeUpdate();
-                });
-            }
+            this.bindRangeAndNumber(
+                param,
+                param + 'Value',
+                param,
+                'apply'
+            );
         });
 
+        // Смена размера сетки → сразу регенерация
         this.addEventListenerSafe('size', 'change', (e) => {
             this.currentSize = parseInt(e.target.value) || 257;
             this.generateTerrain();
         });
 
+        // Смена seed → регенерация
         this.addEventListenerSafe('seed', 'change', (e) => {
             this.currentSeed = parseInt(e.target.value) || 12345;
             this.generateTerrain();
         });
     }
 
-    updateParameterValue(param, value) {
+
+        updateParameterValue(param, value) {
         const map = {
             scale: 'scaleValue',
             octaves: 'octavesValue',
@@ -254,14 +320,15 @@ setupTextureScaleUI() {
         const el = document.getElementById(targetId);
         if (!el) return;
 
-        if (param === 'roughness' || param === 'dsRoughness') {
-            el.textContent = (value / 100).toFixed(2);
-        } else if (param === 'waterLevel' || param === 'colorIntensity' || param === 'hybridWeight') {
-            el.textContent = value + '%';
+        const v = String(value);
+
+        if (el.tagName === 'INPUT') {
+            el.value = v;
         } else {
-            el.textContent = value;
+            el.textContent = v;
         }
     }
+
 
     scheduleRegeneration() {
         if (this.updateTimeout) clearTimeout(this.updateTimeout);
@@ -318,14 +385,14 @@ setupTextureScaleUI() {
             const size = this.currentSize;
             const algorithm = document.getElementById('algorithm')?.value || 'hybrid';
 
-            const scale = this.getNumberValue('scale', 120);
+            const scale  = this.getNumberValue('scale', 180);
             const octaves = this.getNumberValue('octaves', 4);
             const roughness = this.getNumberValue('roughness', 35) / 100;
-            const dsRoughness = this.getNumberValue('dsRoughness', 50) / 100;
-            const hybridWeight = this.getNumberValue('hybridWeight', 40) / 100;
-            const heightScale = this.getNumberValue('heightScale', 50);
-            const erosionIterations = this.getNumberValue('erosionIterations', 3000);
-            const smoothing = this.getNumberValue('smoothing', 30);
+            const dsRoughness = this.getNumberValue('dsRoughness', 40) / 100;
+            const hybridWeight = this.getNumberValue('hybridWeight', 35) / 100;
+            const heightScale = this.getNumberValue('heightScale', 35);
+            const erosionIterations = this.getNumberValue('erosionIterations', 4000);
+            const smoothing  = this.getNumberValue('smoothing', 45);
 
             console.log('Генерация террейна с улучшенными алгоритмами:', {
                 algorithm,
@@ -742,7 +809,7 @@ setupTextureScaleUI() {
         return heightmap;
     }
 
-    normalizeHeightmap(heightmap) {
+        normalizeHeightmap(heightmap) {
         if (!heightmap || heightmap.length === 0) return;
 
         let min = Number.MAX_VALUE;
@@ -761,10 +828,27 @@ setupTextureScaleUI() {
         }
 
         const range = max - min;
+
         for (let i = 0; i < heightmap.length; i++) {
-            heightmap[i] = (heightmap[i] - min) / range;
+            // нормализация 0..1
+            let h = (heightmap[i] - min) / range;
+
+            // мягко поджимаем высокие значения, чтобы не было
+            // супервысоких пиков при больших heightScale
+            // степень > 1 делает распределение более плавным
+            h = Math.pow(h, 1.25);
+
+            // лёгкая компрессия самых верхних 10%
+            if (h > 0.9) {
+                const t = (h - 0.9) / 0.1;    // 0..1
+                const compressed = 0.9 + Math.pow(t, 0.6) * 0.08; // максимум ~0.98
+                h = compressed;
+            }
+
+            heightmap[i] = h;
         }
     }
+
 
     validateParameters(scale, octaves, roughness, dsRoughness) {
         const issues = [];
