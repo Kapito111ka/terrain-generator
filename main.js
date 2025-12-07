@@ -74,8 +74,7 @@ class TerrainGenerator {
         });
 
         this.setupRealtimeControls();
-
-        this.addEventListenerSafe('export', 'click', () => this.exportHeightmap());
+        this.addEventListenerSafe('export', 'click', () => this.exportHeightmapRAW());
         this.addEventListenerSafe('screenshot', 'click', () => this.takeScreenshot());
 
         this.addEventListenerSafe('viewSolid', 'click', () => this.setViewMode('solid'));
@@ -955,6 +954,52 @@ setupTextureScaleUI() {
             console.error('Ошибка экспорта:', error);
             alert('Ошибка при экспорте данных');
         }
+    }
+    // Экспорт heightmap в RAW 16-bit (Unity-friendly)
+    exportHeightmapRAW() {
+        if (!this.currentHeightmap) {
+            alert('Сначала сгенерируй ландшафт перед экспортом.');
+            return;
+        }
+
+        const total = this.currentHeightmap.length;
+        const size = Math.round(Math.sqrt(total)); // предполагаем квадратную карту
+
+        if (size * size !== total) {
+            console.warn('Размер heightmap не квадратный, экспорт RAW может быть некорректным.');
+        }
+
+        // Буфер под 16-битные значения: 2 байта на каждый пиксель
+        const buffer = new ArrayBuffer(size * size * 2);
+        const view = new DataView(buffer);
+
+        for (let i = 0; i < total; i++) {
+            let h = this.currentHeightmap[i];
+
+            // защита от мусора
+            if (!Number.isFinite(h)) h = 0;
+            // ограничиваем 0..1
+            h = Math.min(1, Math.max(0, h));
+
+            // 16-bit: 0..65535
+            const value = Math.round(h * 65535);
+
+            // записываем little-endian (Windows)
+            view.setUint16(i * 2, value, true);
+        }
+
+        const blob = new Blob([buffer], { type: 'application/octet-stream' });
+        const url = URL.createObjectURL(blob);
+
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `heightmap_${size}x${size}_16bit.raw`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        console.log(`Экспортирован RAW heightmap: ${size}x${size}`);
     }
 
     exportHeightmapPNG() {
