@@ -28,7 +28,14 @@ class TerrainGenerator {
         this.initializeEventListeners();
         this.initializeThreeJS();
         this.setupQualityControls();
-         this.setupTextureScaleUI();
+        this.setupTextureScaleUI();
+
+        this.addEventListenerSafe('exportUnityBtn', 'click', () => {
+        this.exportHeightmapRAW();
+        this.exportSplatmapPNG();
+        this.exportUnityConfigJSON();
+        this.exportAllTexturesZIP();  
+        });
 
         window.addEventListener('resize', () => {
             if (this.threeRenderer) this.threeRenderer.onResize();
@@ -76,9 +83,10 @@ class TerrainGenerator {
         this.setupRealtimeControls();
         this.addEventListenerSafe('export', 'click', () => this.exportHeightmapRAW());
         this.addEventListenerSafe('screenshot', 'click', () => this.takeScreenshot());
+        this.addEventListenerSafe('exportFullUnity', 'click', () => this.exportUnityZip());
 
-        this.addEventListenerSafe('viewSolid', 'click', () => this.setViewMode('solid'));
-        this.addEventListenerSafe('viewWireframe', 'click', () => this.setViewMode('wireframe'));
+        // this.addEventListenerSafe('viewSolid', 'click', () => this.setViewMode('solid'));
+        // this.addEventListenerSafe('viewWireframe', 'click', () => this.setViewMode('wireframe'));
 
         this.addEventListenerSafe('algorithm', 'change', (e) => {
             this.updateAlgorithmInfo(e.target.value);
@@ -87,7 +95,8 @@ class TerrainGenerator {
 
         console.log('Обработчики событий инициализированы');
     }
-setupTextureScaleUI() {
+
+    setupTextureScaleUI() {
         const win     = document.getElementById("textureScaleWindow");
         const openBtn = document.getElementById("openTextureScale");
         const closeBtn = document.getElementById("tsCloseBtn");
@@ -130,6 +139,7 @@ setupTextureScaleUI() {
             };
         });
     }
+
     setupQualityControls() {
         const qualitySelect = document.getElementById('renderQuality');
         const antiAliasingSelect = document.getElementById('antiAliasing');
@@ -248,8 +258,6 @@ setupTextureScaleUI() {
 
     // ---------------- REALTIME-КОНТРОЛЫ ----------------
 
-        // ---------------- REALTIME-КОНТРОЛЫ ----------------
-
     setupRealtimeControls() {
         console.log('Настройка контролов реального времени.');
 
@@ -297,7 +305,6 @@ setupTextureScaleUI() {
             this.generateTerrain();
         });
     }
-
 
         updateParameterValue(param, value) {
         const map = {
@@ -496,6 +503,9 @@ setupTextureScaleUI() {
             if (showProgress) this.updateProgress(85, 'Нормализация высот...');
 
             this.normalizeHeightmap(heightmap);
+            heightmap = this.sanitizeHeightmap(heightmap);
+            this.currentHeightmap = heightmap;
+
 
             if (showProgress) this.updateProgress(90, 'Создание 3D-мешка...');
 
@@ -808,20 +818,24 @@ setupTextureScaleUI() {
         return heightmap;
     }
 
+
         normalizeHeightmap(heightmap) {
         if (!heightmap || heightmap.length === 0) return;
 
         let min = Number.MAX_VALUE;
         let max = -Number.MAX_VALUE;
 
+        // Быстрый проход, чтобы найти min/max
         const step = Math.max(1, Math.floor(heightmap.length / 10000));
         for (let i = 0; i < heightmap.length; i += step) {
             const v = heightmap[i];
+            if (!Number.isFinite(v)) continue;
             if (v < min) min = v;
             if (v > max) max = v;
         }
 
-        if (min === max) {
+        if (!Number.isFinite(min) || !Number.isFinite(max) || min === max) {
+            // Если всё плохо — просто заполняем серым
             heightmap.fill(0.5);
             return;
         }
@@ -829,24 +843,29 @@ setupTextureScaleUI() {
         const range = max - min;
 
         for (let i = 0; i < heightmap.length; i++) {
-            // нормализация 0..1
-            let h = (heightmap[i] - min) / range;
+            let h = heightmap[i];
 
-            // мягко поджимаем высокие значения, чтобы не было
-            // супервысоких пиков при больших heightScale
-            // степень > 1 делает распределение более плавным
+            if (!Number.isFinite(h)) h = min;       // защищаемся от NaN
+            h = (h - min) / range;                  // 0..1
+
+            // мягко поджимаем вершины
             h = Math.pow(h, 1.25);
 
-            // лёгкая компрессия самых верхних 10%
+            // лёгкая компрессия верхних 10%
             if (h > 0.9) {
-                const t = (h - 0.9) / 0.1;    // 0..1
-                const compressed = 0.9 + Math.pow(t, 0.6) * 0.08; // максимум ~0.98
+                const t = (h - 0.9) / 0.1;          // 0..1
+                const compressed = 0.9 + Math.pow(t, 0.6) * 0.08;
                 h = compressed;
             }
+
+            // финальный clamp
+            if (h < 0) h = 0;
+            if (h > 1) h = 1;
 
             heightmap[i] = h;
         }
     }
+
 
 
     validateParameters(scale, octaves, roughness, dsRoughness) {
@@ -1034,6 +1053,120 @@ setupTextureScaleUI() {
             URL.revokeObjectURL(url);
         });
     }
+        sanitizeHeightmap(map) {
+            const out = new Float32Array(map.length);
+            for (let i = 0; i < map.length; i++) {
+                let v = map[i];
+
+                // Убираем NaN
+                if (!Number.isFinite(v)) v = 0;
+
+                // ограничиваем диапазон
+                if (v < 0) v = 0;
+                if (v > 1) v = 1;
+
+                out[i] = v;
+            }
+            return out;
+        }
+        exportSplatmapPNG() {
+        if (!this.currentHeightmap) {
+            alert('Сначала сгенерируй ландшафт!');
+            return;
+        }
+
+        // 1) чистим карту высот
+        const safeMap = this.sanitizeHeightmap(this.currentHeightmap);
+        const size = Math.sqrt(safeMap.length) | 0;
+
+        // 2) считаем min/max по уже очищенной карте (на всякий)
+        let minH = Infinity, maxH = -Infinity;
+        for (let i = 0; i < safeMap.length; i++) {
+            const h = safeMap[i];
+            if (h < minH) minH = h;
+            if (h > maxH) maxH = h;
+        }
+        const range = maxH - minH || 1;
+
+        // 3) адаптивные пороги (на основе нормализованной высоты 0..1)
+        const t1 = 0.20; // sand
+        const t2 = 0.45; // grass
+        const t3 = 0.70; // rock
+
+        const canvas = document.createElement('canvas');
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext('2d');
+        const imgData = ctx.createImageData(size, size);
+
+        let cSand = 0, cGrass = 0, cRock = 0, cSnow = 0;
+
+        for (let y = 0; y < size; y++) {
+            for (let x = 0; x < size; x++) {
+                const idxH = y * size + x;
+                const hRaw = safeMap[idxH];
+
+                // нормализуем в 0..1 от min/max, чтобы точно попадать в пороги
+                const h = (hRaw - minH) / range;
+
+                let r = 0, g = 0, b = 0, a = 0;
+                if (h < t1) {
+                    r = 255; cSand++;
+                } else if (h < t2) {
+                    g = 255; cGrass++;
+                } else if (h < t3) {
+                    b = 255; cRock++;
+                } else {
+                    a = 255; cSnow++;
+                }
+
+                const idx = idxH * 4;
+                imgData.data[idx    ] = r;
+                imgData.data[idx + 1] = g;
+                imgData.data[idx + 2] = b;
+                imgData.data[idx + 3] = a; // важно: не оставляем альфу 0
+            }
+        }
+
+        console.log('Splat stats:',
+            { size, minH, maxH, sand: cSand, grass: cGrass, rock: cRock, snow: cSnow });
+
+        ctx.putImageData(imgData, 0, 0);
+
+        canvas.toBlob((blob) => {
+            const a = document.createElement("a");
+            a.href = URL.createObjectURL(blob);
+            a.download = `splatmap_${size}x${size}.png`;
+            a.click();
+        }, "image/png");
+    }
+
+    exportUnityConfigJSON() {
+    const waterLevelSlider = document.getElementById('waterLevel');
+    const waterLevelValue = waterLevelSlider
+        ? parseFloat(waterLevelSlider.value) / 100.0
+        : (this.currentWaterLevel ?? 0.2);
+
+    const config = {
+        version: 1,
+        mapSize: Math.sqrt(this.currentHeightmap?.length || 0) || 257,
+        waterLevel: waterLevelValue,   // 0..1
+        note: "waterLevel is normalized: 0..1 of max terrain height"
+    };
+
+    const blob = new Blob([JSON.stringify(config, null, 2)], {
+        type: "application/json"
+    });
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = "unity_config.json";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    }
 
     takeScreenshot() {
         if (!this.threeRenderer || !this.threeRenderer.renderer) return;
@@ -1064,6 +1197,189 @@ setupTextureScaleUI() {
         if (!this.threeRenderer || !this.threeRenderer.terrain) return;
         this.threeRenderer.terrain.material.wireframe = (mode === 'wireframe');
     }
+
+    exportFullUnity() {
+    if (!this.currentHeightmap) {
+        alert("Сначала сгенерируй ландшафт!");
+        return;
+    }
+
+    // 1. RAW
+    this.exportHeightmapRAW();
+
+    // 2. Splatmap
+    this.exportSplatmapPNG();
+
+    // 3. Config JSON
+    this.exportUnityConfigJSON();
+
+    // 4. Экспорт всех PBR текстур (как ZIP)
+    this.exportAllTexturesZIP();
+
+    alert("Экспорт завершён! Теперь открой Unity и запусти AutoImporter.");
+    }   
+        // Полный экспорт в один ZIP для Unity (RAW + splatmap + config + текстуры)
+    async exportUnityZip() {
+        if (!this.currentHeightmap) {
+            alert('Сначала сгенерируй ландшафт!');
+            return;
+        }
+
+        if (typeof JSZip === 'undefined') {
+            alert('JSZip не подключён. Добавь <script src="...jszip.min.js"> в index.html');
+            return;
+        }
+
+        const zip = new JSZip();
+
+        // ---------- 1) HEIGHTMAP RAW ----------
+        const total = this.currentHeightmap.length;
+        const size = Math.round(Math.sqrt(total));
+
+        if (size * size !== total) {
+            console.warn('Размер heightmap не квадратный, но продолжаем экспорт.');
+        }
+
+        const buffer = new ArrayBuffer(size * size * 2);
+        const view = new DataView(buffer);
+
+        for (let i = 0; i < total; i++) {
+            let h = this.currentHeightmap[i];
+            if (!Number.isFinite(h)) h = 0;
+            h = Math.min(1, Math.max(0, h));
+            const value = Math.round(h * 65535);
+            view.setUint16(i * 2, value, true); // little-endian
+        }
+
+        // кладём RAW внутрь папки heightmap/
+        zip.file(`heightmap/heightmap_${size}x${size}_16bit.raw`, new Uint8Array(buffer));
+
+         // ---------- 2) SPLATMAP PNG ----------
+{
+        const canvas = document.createElement('canvas');
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext('2d');
+        const imgData = ctx.createImageData(size, size);
+
+        const safeMap = this.sanitizeHeightmap(this.currentHeightmap);
+
+        // min/max по высотам
+        let minH = Infinity, maxH = -Infinity;
+        for (let i = 0; i < safeMap.length; i++) {
+            const h = safeMap[i];
+            if (h < minH) minH = h;
+            if (h > maxH) maxH = h;
+        }
+        const range = maxH - minH || 1;
+
+        const t1 = 0.20;
+        const t2 = 0.45;
+        const t3 = 0.70;
+
+        let cSand = 0, cGrass = 0, cRock = 0, cSnow = 0;
+
+        for (let y = 0; y < size; y++) {
+            for (let x = 0; x < size; x++) {
+                const idxH = y * size + x;
+                const hRaw = safeMap[idxH];
+                const h = (hRaw - minH) / range;
+
+                let r = 0, g = 0, b = 0, a = 0;
+                if (h < t1)      { r = 255; cSand++;  }
+                else if (h < t2) { g = 255; cGrass++; }
+                else if (h < t3) { b = 255; cRock++;  }
+                else             { a = 255; cSnow++;  }
+
+                const idx = idxH * 4;
+                imgData.data[idx    ] = r;
+                imgData.data[idx + 1] = g;
+                imgData.data[idx + 2] = b;
+                imgData.data[idx + 3] = a;
+            }
+        }
+
+        console.log('ZIP splat stats:',
+            { size, minH, maxH, sand: cSand, grass: cGrass, rock: cRock, snow: cSnow });
+
+        ctx.putImageData(imgData, 0, 0);
+
+        const splatBlob = await new Promise((resolve) =>
+            canvas.toBlob(resolve, 'image/png')
+        );
+
+        zip.file(`splatmap/splatmap_${size}x${size}.png`, splatBlob);
+    }
+
+
+        function generateSplatPixel(h) {
+            const t1 = 0.2;
+            const t2 = 0.45;
+            const t3 = 0.7;
+
+            if (h < t1) return [255,0,0,0];
+            if (h < t2) return [0,255,0,0];
+            if (h < t3) return [0,0,255,0];
+            return [0,0,0,255];
+        }
+        // ---------- 3) UNITY CONFIG JSON ----------
+        {
+            const heightScale = this.getNumberValue('heightScale', 35);
+            const waterLevelSlider = document.getElementById('waterLevel');
+            const waterLevelValue = waterLevelSlider
+                ? parseFloat(waterLevelSlider.value) / 100.0
+                : (this.currentWaterLevel ?? 0.2);
+
+            const config = {
+                version: 1,
+                mapSize: size,
+                heightScale: heightScale,
+                waterLevel: waterLevelValue,
+                note: "waterLevel * terrainHeight = мировая высота воды"
+            };
+
+            zip.file('unity_config.json', JSON.stringify(config, null, 2));
+        }
+
+        // ---------- 4) ТЕКСТУРЫ PBR ----------
+        {
+            const materials = ["grass", "dirt", "rock", "cliff", "sand", "snow"];
+            const maps = ["color.jpg", "normal.jpg", "roughness.jpg", "ao.jpg", "displacement.jpg"];
+
+            for (const mat of materials) {
+                for (const map of maps) {
+                    const path = `textures/terrain/${mat}/${map}`;
+                    try {
+                        const resp = await fetch(path);
+                        if (!resp.ok) {
+                            console.warn(`Не удалось загрузить ${path} (статус ${resp.status})`);
+                            continue;
+                        }
+                        const blob = await resp.blob();
+                        // сохраняем в ZIP с той же структурой
+                        zip.file(`textures/terrain/${mat}/${map}`, blob);
+                        console.log(`Добавлено в ZIP: ${path}`);
+                    } catch (e) {
+                        console.warn(`Ошибка при загрузке ${path}:`, e);
+                    }
+                }
+            }
+        }
+
+        // ---------- 5) ГЕНЕРАЦИЯ ZIP И СКАЧИВАНИЕ ----------
+        const content = await zip.generateAsync({ type: "blob" });
+
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(content);
+        a.download = `unity_export_${size}x${size}.zip`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+
+        console.log("unity_export ZIP успешно создан");
+    }
+
+
 }
 
 // ---------------- ВНЕШНЯЯ УТИЛИТА: LAPLACIAN SMOOTHING ----------------
