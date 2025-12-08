@@ -1109,22 +1109,19 @@ class TerrainGenerator {
                 // нормализуем в 0..1 от min/max, чтобы точно попадать в пороги
                 const h = (hRaw - minH) / range;
 
-                let r = 0, g = 0, b = 0, a = 0;
-                if (h < t1) {
-                    r = 255; cSand++;
-                } else if (h < t2) {
-                    g = 255; cGrass++;
-                } else if (h < t3) {
-                    b = 255; cRock++;
-                } else {
-                    a = 255; cSnow++;
-                }
+            let r = 0, g = 0, b = 0, a = 255;  // alpha сразу 255
 
-                const idx = idxH * 4;
-                imgData.data[idx    ] = r;
-                imgData.data[idx + 1] = g;
-                imgData.data[idx + 2] = b;
-                imgData.data[idx + 3] = a; // важно: не оставляем альфу 0
+            if (h < t1)      { r = 255; cSand++;  }
+            else if (h < t2) { g = 255; cGrass++; }
+            else if (h < t3) { b = 255; cRock++;  }
+            else             { a = 255; cSnow++;  }  // снег можно хранить в альфе, но она всё равно 255
+
+            const idx = idxH * 4;
+            imgData.data[idx    ] = r;
+            imgData.data[idx + 1] = g;
+            imgData.data[idx + 2] = b;
+            imgData.data[idx + 3] = a;   // всегда 255
+
             }
         }
 
@@ -1285,17 +1282,26 @@ class TerrainGenerator {
                 const hRaw = safeMap[idxH];
                 const h = (hRaw - minH) / range;
 
-                let r = 0, g = 0, b = 0, a = 0;
-                if (h < t1)      { r = 255; cSand++;  }
-                else if (h < t2) { g = 255; cGrass++; }
-                else if (h < t3) { b = 255; cRock++;  }
-                else             { a = 255; cSnow++;  }
+                let r = 0, g = 0, b = 0, a = 255;  // alpha по умолчанию 255
+
+                if (h < t1) {
+                    r = 255; cSand++;
+                } else if (h < t2) {
+                    g = 255; cGrass++;
+                } else if (h < t3) {
+                    b = 255; cRock++;
+                } else {
+                    // снег кладём в альфу, но цвет тоже можно оставить чёрным
+                    a = 255; 
+                    cSnow++;
+                }
 
                 const idx = idxH * 4;
                 imgData.data[idx    ] = r;
                 imgData.data[idx + 1] = g;
                 imgData.data[idx + 2] = b;
-                imgData.data[idx + 3] = a;
+                imgData.data[idx + 3] = a;   // всегда 255
+
             }
         }
 
