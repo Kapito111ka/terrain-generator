@@ -22,6 +22,8 @@ class ThreeRenderer {
         this.materials = {}; // PBR materials
 
         this.clock = new THREE.Clock(); // для анимации воды
+        
+        this.waterLevel01 = 0.2;
 
         this.init();
     }
@@ -388,6 +390,7 @@ class ThreeRenderer {
             shader.uniforms.terrainSize = { value: terrainSize };
             shader.uniforms.heightScale = { value: heightScale };
             shader.uniforms.parallaxScale = { value: 0.03 };
+            shader.uniforms.waterLevel01  = { value: this.waterLevel01 };
 
             // ----------------------------------------------------
             // Добавляем мировые позиции и нормали
@@ -431,6 +434,7 @@ class ThreeRenderer {
                 uniform float terrainSize;
                 uniform float heightScale;
                 uniform float parallaxScale;
+                uniform float waterLevel01; 
 
                 // текстуры
                 uniform sampler2D grassColorMap;
@@ -541,6 +545,16 @@ class ThreeRenderer {
                 // снег — высокогорье, преимущественно на относительных плато (не на стенках)
                 float wSnow = pow(hHigh, 2.0) * (1.0 - slope * 0.7);
 
+                // ------------------------------------------------
+                // Shoreline: усиливаем песок вокруг уровня воды
+                // ------------------------------------------------
+                float shoreWidth = 0.04;                    // ширина береговой зоны в 0..1
+                float dh = abs(h - waterLevel01);           // высотное расстояние до уровня воды
+                float shore = 1.0 - smoothstep(shoreWidth, shoreWidth * 2.0, dh);
+
+                // Добавляем песка у берега (на пологих участках)
+                wSand += shore * (1.0 - slope) * 2.0;
+
                 // небольшая стабилизация, чтобы не было нулевой суммы
                 wSand  = max(wSand,  0.0001);
                 wGrass = max(wGrass, 0.0001);
@@ -591,7 +605,7 @@ class ThreeRenderer {
                 diffuseColor.rgb *= blended;
                 `
             );
-
+            material.userData.shader = shader;
         };
 
         return material;
@@ -604,6 +618,19 @@ class ThreeRenderer {
         if (!this.isInitialized) return;
 
         const y = heightScale * waterLevel; // waterLevel 0..1
+
+        this.waterLevel01 = waterLevel;
+
+        if (this.terrain &&
+            this.terrain.material &&
+            this.terrain.material.userData &&
+            this.terrain.material.userData.shader) {
+
+            const shader = this.terrain.material.userData.shader;
+            if (shader.uniforms && shader.uniforms.waterLevel01) {
+                shader.uniforms.waterLevel01.value = waterLevel;
+            }
+        }
 
         if (!this.waterMaterial) {
             // uniforms для шейдера воды
