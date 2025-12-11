@@ -49,10 +49,14 @@ class ThreeRenderer {
 
             // Renderer
             this.renderer = new THREE.WebGLRenderer({
-                antialias: true,
-                powerPreference: "high-performance",
-                precision: "highp"
+            antialias: true,
+            alpha: false,                // у вас фон сцены задаётся сценой/clear color — делаем непрозрачный канвас
+            preserveDrawingBuffer: true, // важно для корректного получения изображения через toDataURL()
             });
+            this.renderer.setPixelRatio(window.devicePixelRatio || 1);
+            this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
+            this.renderer.setClearColor(0x87CEEB); // при желании подберите цвет фона (sky color)
+            this.container.appendChild(this.renderer.domElement);
 
             this.renderer.setSize(
                 this.container.clientWidth,
@@ -176,6 +180,28 @@ class ThreeRenderer {
 
         console.log("PBR материалы загружены:", this.materials);
     }
+
+    captureScreenshot(filename = 'terrain_screenshot.png') {
+    try {
+        // убедимся, что последний кадр отрисован
+        this.renderer.render(this.scene, this.camera);
+
+        const dataURL = this.renderer.domElement.toDataURL('image/png');
+
+        // создаём <a> и инициируем скачивание
+        const a = document.createElement('a');
+        a.href = dataURL;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+
+        console.log('[Screenshot] saved:', filename);
+    } catch (err) {
+        console.error('[Screenshot] failed:', err);
+    }
+    }
+
     // ----------------------------------------------------------
     // Создание террейна (геометрия + высоты)
     // ----------------------------------------------------------

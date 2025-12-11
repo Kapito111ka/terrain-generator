@@ -28,12 +28,6 @@ class TerrainGenerator {
         this.initializeEventListeners();
         this.initializeThreeJS();
 
-        this.addEventListenerSafe('exportUnityBtn', 'click', () => {
-        this.exportHeightmapRAW();
-        this.exportSplatmapPNG();
-        this.exportUnityConfigJSON();
-        this.exportAllTexturesZIP();  
-        });
 
         window.addEventListener('resize', () => {
             if (this.threeRenderer) this.threeRenderer.onResize();
@@ -79,7 +73,6 @@ class TerrainGenerator {
         });
 
         this.setupRealtimeControls();
-        this.addEventListenerSafe('export', 'click', () => this.exportHeightmapRAW());
         this.addEventListenerSafe('screenshot', 'click', () => this.takeScreenshot());
         this.addEventListenerSafe('exportFullUnity', 'click', () => this.exportUnityZip());
 
@@ -94,66 +87,6 @@ class TerrainGenerator {
         console.log('Обработчики событий инициализированы');
     }
 
-    setupTextureScaleUI() {
-        const win     = document.getElementById("textureScaleWindow");
-        const openBtn = document.getElementById("openTextureScale");
-        const closeBtn = document.getElementById("tsCloseBtn");
-
-        // если HTML ещё не добавлен — просто выходим, чтобы не было ошибок
-        if (!win || !openBtn || !closeBtn) {
-            console.warn("Texture Scale UI не найден в DOM (textureScaleWindow / openTextureScale / tsCloseBtn)");
-            return;
-        }
-
-        openBtn.onclick  = () => win.style.display = "block";
-        closeBtn.onclick = () => win.style.display = "none";
-
-        const sliders = [
-            { id: "tsGrass", uni: "grassScale" },
-            { id: "tsDirt",  uni: "dirtScale" },
-            { id: "tsRock",  uni: "rockScale" },
-            { id: "tsCliff", uni: "cliffScale" },
-            { id: "tsSand",  uni: "sandScale" },
-            { id: "tsSnow",  uni: "snowScale" },
-        ];
-
-        sliders.forEach(s => {
-            const slider = document.getElementById(s.id);
-            const val    = document.getElementById(s.id + "Val");
-
-            if (!slider || !val) return;
-
-            val.textContent = slider.value;
-
-            slider.oninput = () => {
-                val.textContent = slider.value;
-
-                if (this.threeRenderer && this.threeRenderer.terrain) {
-                    const mat = this.threeRenderer.terrain.material;
-                    if (!mat.userData) mat.userData = {};
-                    mat.userData[s.uni] = parseFloat(slider.value);
-                    mat.needsUpdate = true;
-                }
-            };
-        });
-    }
-
-    setupQualityControls() {
-        const qualitySelect = document.getElementById('renderQuality');
-        const antiAliasingSelect = document.getElementById('antiAliasing');
-
-        if (qualitySelect) {
-            qualitySelect.addEventListener('change', (e) => {
-                this.applyQualitySettings(e.target.value);
-            });
-        }
-
-        if (antiAliasingSelect) {
-            antiAliasingSelect.addEventListener('change', (e) => {
-                this.toggleAntiAliasing(e.target.value === 'on');
-            });
-        }
-    }
 
     applyQualitySettings(quality) {
         if (!this.threeRenderer || !this.threeRenderer.renderer) return;
