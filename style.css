@@ -328,3 +328,42 @@ body{
   text-align: right;
   background: #fff;
 }
+
+#renderQualityContainer,
+#renderQualitySelect,
+#renderQualityLabel,
+#textureScaleWindow,
+.texture-scale-btn,
+.ts-open-btn,
+#textureScalePanel {
+  display: none !important;
+}
+
+/* дополнительно: скрыть метку и кнопки экспорта связи с Render Quality */
+.control-render-quality,
+.control-texturescale,
+.btn-texture-scale {
+  display: none !important;
+}
+
+/* Скрыть Render quality */
+#renderQualityContainer,
+#renderQualityLabel,
+#renderQualitySelect,
+.control-render-quality {
+    display: none !important;
+}
+
+/* Скрыть Anti-aliasing */
+#aaLabel,
+#aaSelect,
+.control-antialias {
+    display: none !important;
+}
+
+/* Скрыть Texture Scale Settings окно */
+#textureScaleWindow,
+.ts-open-btn,
+.texture-scale-btn {
+    display: none !important;
+}

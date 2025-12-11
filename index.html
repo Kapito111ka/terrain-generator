@@ -158,23 +158,6 @@
             <button id="exportUnityBtn" class="btn-primary">Unity export</button>
             <button id="exportFullUnity">Экспорт в Unity (полный)</button>
           </div>
-
-          <label class="field">
-            <span class="label">Render quality</span>
-            <select id="renderQuality" class="select">
-              <option value="high" selected>High</option>
-              <option value="medium">Medium</option>
-              <option value="low">Low</option>
-            </select>
-          </label>
-
-          <label class="field">
-            <span class="label">Anti-aliasing</span>
-            <select id="antiAliasing" class="select">
-              <option value="on" selected>On</option>
-              <option value="off">Off</option>
-            </select>
-          </label>
         </section>
 
         <section class="panel editor-panel">
@@ -222,56 +205,6 @@
       </div>
     </footer>
   </div>
-<div id="textureScaleWindow" class="ts-window">
-    <div class="ts-header">
-        Texture Scale Settings
-        <button id="tsCloseBtn" class="ts-close">×</button>
-    </div>
-
-    <div class="ts-content">
-
-        <div class="ts-group">
-            <label>Grass Scale</label>
-            <input id="tsGrass" type="range" min="1" max="80" value="20">
-            <span id="tsGrassVal">20</span>
-        </div>
-
-        <div class="ts-group">
-            <label>Dirt Scale</label>
-            <input id="tsDirt" type="range" min="1" max="80" value="15">
-            <span id="tsDirtVal">15</span>
-        </div>
-
-        <div class="ts-group">
-            <label>Rock Scale</label>
-            <input id="tsRock" type="range" min="1" max="80" value="12">
-            <span id="tsRockVal">12</span>
-        </div>
-
-        <div class="ts-group">
-            <label>Cliff Scale</label>
-            <input id="tsCliff" type="range" min="1" max="80" value="10">
-            <span id="tsCliffVal">10</span>
-        </div>
-
-        <div class="ts-group">
-            <label>Sand Scale</label>
-            <input id="tsSand" type="range" min="1" max="80" value="18">
-            <span id="tsSandVal">18</span>
-        </div>
-
-        <div class="ts-group">
-            <label>Snow Scale</label>
-            <input id="tsSnow" type="range" min="1" max="80" value="14">
-            <span id="tsSnowVal">14</span>
-        </div>
-
-    </div>
-</div>
-
-<button id="openTextureScale" class="ts-open-btn">
-    Texture Scale Settings
-</button>
 
   <!-- Скрипты (локальные) -->
   <script src="perlin.js"></script>

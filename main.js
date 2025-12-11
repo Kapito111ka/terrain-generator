@@ -27,8 +27,6 @@ class TerrainGenerator {
     initialize() {
         this.initializeEventListeners();
         this.initializeThreeJS();
-        this.setupQualityControls();
-        this.setupTextureScaleUI();
 
         this.addEventListenerSafe('exportUnityBtn', 'click', () => {
         this.exportHeightmapRAW();
