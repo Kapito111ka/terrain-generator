@@ -8,6 +8,8 @@
   <!-- Three.js (CDN) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
 </head>
 <body>
   <div class="app">
@@ -63,36 +65,42 @@
 
           <label class="field">
             <span class="label">Scale</span>
-            <input id="scale" type="range" min="10" max="500" value="120">
-            <div class="value" id="scaleValue">120</div>
+            <input id="scale" type="range" min="10" max="500" value="180" step="1">
+            <input id="scaleValue" class="value input-number" type="number"
+                  min="10" max="500" step="1" value="180">
           </label>
 
           <label class="field">
             <span class="label">Octaves</span>
-            <input id="octaves" type="range" min="1" max="10" value="4">
-            <div class="value" id="octavesValue">4</div>
+            <input id="octaves" type="range" min="1" max="10" value="4" step="1">
+            <input id="octavesValue" class="value input-number" type="number"
+                  min="1" max="10" step="1" value="4">
           </label>
 
           <label class="field">
             <span class="label">Roughness</span>
-            <input id="roughness" type="range" min="1" max="100" value="40">
-            <div class="value" id="roughnessValue">0.40</div>
+            <input id="roughness" type="range" min="1" max="100" value="35" step="1">
+            <input id="roughnessValue" class="value input-number" type="number"
+                  min="1" max="100" step="1" value="35">
           </label>
         </section>
+
 
         <section class="panel">
           <h2 class="panel-title">Diamond-Square</h2>
 
           <label class="field">
             <span class="label">DS Roughness</span>
-            <input id="dsRoughness" type="range" min="1" max="100" value="50">
-            <div class="value" id="dsRoughnessValue">0.50</div>
+            <input id="dsRoughness" type="range" min="1" max="100" value="40" step="1">
+            <input id="dsRoughnessValue" class="value input-number" type="number"
+                  min="1" max="100" step="1" value="40">
           </label>
 
           <label class="field">
             <span class="label">Hybrid Weight</span>
-            <input id="hybridWeight" type="range" min="0" max="100" value="40">
-            <div class="value" id="hybridWeightValue">40%</div>
+            <input id="hybridWeight" type="range" min="0" max="100" value="35" step="1">
+            <input id="hybridWeightValue" class="value input-number" type="number"
+                  min="0" max="100" step="1" value="35">
           </label>
         </section>
 
@@ -101,70 +109,53 @@
 
           <label class="field">
             <span class="label">Height scale</span>
-            <input id="heightScale" type="range" min="10" max="200" value="50">
-            <div class="value" id="heightScaleValue">50</div>
+            <input id="heightScale" type="range" min="10" max="200" value="35" step="1">
+            <input id="heightScaleValue" class="value input-number" type="number"
+                  min="10" max="200" step="1" value="35">
           </label>
 
           <label class="field">
             <span class="label">Erosion iterations</span>
-            <input id="erosionIterations" type="range" min="0" max="10000" value="3000">
-            <div class="value" id="erosionValue">3000</div>
+            <input id="erosionIterations" type="range" min="0" max="10000" value="4000" step="100">
+            <input id="erosionValue" class="value input-number" type="number"
+                  min="0" max="10000" step="100" value="4000">
           </label>
 
           <label class="field">
             <span class="label">Smoothing</span>
-            <input id="smoothing" type="range" min="0" max="100" value="30">
-            <div class="value" id="smoothingValue">30</div>
+            <input id="smoothing" type="range" min="0" max="100" value="45" step="1">
+            <input id="smoothingValue" class="value input-number" type="number"
+                  min="0" max="100" step="1" value="45">
           </label>
         </section>
+
 
         <section class="panel">
           <h2 class="panel-title">Внешний вид</h2>
 
           <label class="field">
             <span class="label">Water level</span>
-            <input id="waterLevel" type="range" min="0" max="100" value="15">
-            <div class="value" id="waterLevelValue">15%</div>
+            <input id="waterLevel" type="range" min="0" max="100" value="20" step="1">
+            <input id="waterLevelValue" class="value input-number" type="number"
+                  min="0" max="100" step="1" value="20">
           </label>
 
           <label class="field">
             <span class="label">Color intensity</span>
-            <input id="colorIntensity" type="range" min="50" max="200" value="100">
-            <div class="value" id="colorIntensityValue">100%</div>
+            <input id="colorIntensity" type="range" min="50" max="200" value="110" step="1">
+            <input id="colorIntensityValue" class="value input-number" type="number"
+                  min="50" max="200" step="1" value="110">
           </label>
 
-          <div class="field">
-            <span class="label">View</span>
-            <div class="view-buttons">
-              <button id="viewSolid" class="btn active">Текстура</button>
-              <button id="viewWireframe" class="btn">Сетка</button>
-            </div>
-          </div>
         </section>
+
 
         <section class="panel">
           <h2 class="panel-title">Инструменты</h2>
           <div class="tools">
-            <button id="export" class="btn">Экспорт</button>
             <button id="screenshot" class="btn">Скриншот</button>
+            <button id="exportFullUnity">Экспорт в Unity (полный)</button>
           </div>
-
-          <label class="field">
-            <span class="label">Render quality</span>
-            <select id="renderQuality" class="select">
-              <option value="high" selected>High</option>
-              <option value="medium">Medium</option>
-              <option value="low">Low</option>
-            </select>
-          </label>
-
-          <label class="field">
-            <span class="label">Anti-aliasing</span>
-            <select id="antiAliasing" class="select">
-              <option value="on" selected>On</option>
-              <option value="off">Off</option>
-            </select>
-          </label>
         </section>
 
         <section class="panel editor-panel">

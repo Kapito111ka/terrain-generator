@@ -258,3 +258,112 @@ body{
   .viewer{ order:1 }
   .three-container{ height:60vh; }
 }
+.ts-window {
+    position: fixed;
+    right: 30px;
+    top: 30px;
+    width: 340px;
+    background: #1e1e1e;
+    color: white;
+    border: 1px solid #444;
+    border-radius: 6px;
+    padding: 12px;
+    display: none;
+    z-index: 9999;
+    box-shadow: 0 0 20px rgba(0,0,0,0.4);
+}
+
+.ts-header {
+    font-size: 18px;
+    margin-bottom: 10px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid #444;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.ts-close {
+    background: none;
+    border: none;
+    color: white;
+    font-size: 20px;
+    cursor: pointer;
+}
+
+.ts-group {
+    margin-bottom: 15px;
+}
+
+.ts-group input[type=range] {
+    width: 100%;
+}
+
+.ts-group span {
+    float: right;
+}
+
+.ts-open-btn {
+    position: fixed;
+    right: 30px;
+    bottom: 30px;
+    background: #444;
+    color: white;
+    padding: 14px 18px;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 16px;
+    z-index: 9999;
+}
+.ts-open-btn:hover {
+    background: #666;
+}
+.input-number {
+  width: 64px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  font-size: 12px;
+  text-align: right;
+  background: #fff;
+}
+
+#renderQualityContainer,
+#renderQualitySelect,
+#renderQualityLabel,
+#textureScaleWindow,
+.texture-scale-btn,
+.ts-open-btn,
+#textureScalePanel {
+  display: none !important;
+}
+
+/* дополнительно: скрыть метку и кнопки экспорта связи с Render Quality */
+.control-render-quality,
+.control-texturescale,
+.btn-texture-scale {
+  display: none !important;
+}
+
+/* Скрыть Render quality */
+#renderQualityContainer,
+#renderQualityLabel,
+#renderQualitySelect,
+.control-render-quality {
+    display: none !important;
+}
+
+/* Скрыть Anti-aliasing */
+#aaLabel,
+#aaSelect,
+.control-antialias {
+    display: none !important;
+}
+
+/* Скрыть Texture Scale Settings окно */
+#textureScaleWindow,
+.ts-open-btn,
+.texture-scale-btn {
+    display: none !important;
+}

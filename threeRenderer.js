@@ -1,707 +1,758 @@
-// ===============================
-// Вспомогательная функция: загрузка одного PBR-набора
-// ===============================
-function loadPBRSet(loader, basePath) {
-    const load = (file) =>
-        new Promise((resolve) => {
-            if (!file) {
-                resolve(null);
-                return;
-            }
-            loader.load(
-                basePath + file,
-                (tex) => {
-                    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-                    tex.anisotropy = 8;
-                    resolve(tex);
-                },
-                undefined,
-                (err) => {
-                    console.error('Ошибка загрузки текстуры:', basePath + file, err);
-                    resolve(null);
-                }
-            );
-        });
-
-    return Promise.all([
-        load('color.jpg'),
-        load('normal.jpg'),
-        load('roughness.jpg'),
-        load('ao.jpg')
-    ]).then(([colorMap, normalMap, roughnessMap, aoMap]) => {
-        if (colorMap) colorMap.encoding = THREE.sRGBEncoding;
-        [normalMap, roughnessMap, aoMap].forEach((t) => {
-            if (t) t.encoding = THREE.LinearEncoding;
-        });
-
-        [colorMap, normalMap, roughnessMap, aoMap].forEach((t) => {
-            if (!t) return;
-            t.repeat.set(8, 8);
-        });
-
-        return { colorMap, normalMap, roughnessMap, aoMap, displacementMap: null };
-    });
-}
-
-// ===============================
-// Класс ThreeRenderer
-// ===============================
 class ThreeRenderer {
-    constructor(containerId) {
+    constructor(containerId, textureLoader) {
         this.container = document.getElementById(containerId);
+        this.textureLoader = textureLoader;
+
         this.scene = null;
         this.camera = null;
         this.renderer = null;
         this.controls = null;
         this.terrain = null;
-        this.lights = [];
+
+        this.water = null;
+        this.waterMaterial = null;
+
         this.isInitialized = false;
+        this.lights = [];
+
+        // Mouse / raycaster
         this.raycaster = new THREE.Raycaster();
         this.mouse = new THREE.Vector2();
 
-        // PBR-наборы текстур
-        this.pbrTextures = {
-            grass: null,
-            rock:  null,
-            sand:  null,
-            snow:  null
-        };
+        this.materials = {}; // PBR materials
+
+        this.clock = new THREE.Clock(); // для анимации воды
+        
+        this.waterLevel01 = 0.2;
 
         this.init();
     }
 
-    // -------------------------------
-    // Инициализация Three.js
-    // -------------------------------
+
     async init() {
         try {
-            console.log('Инициализация Three.js для высокого разрешения.');
-
-            // Сцена
+            console.log("Инициализация Three.js (UE-стиль)...");
+            
+            // Scene
             this.scene = new THREE.Scene();
             this.scene.background = new THREE.Color(0x87CEEB);
-            this.scene.fog = new THREE.Fog(0x87CEEB, 100, 1000);
+            this.scene.fog = new THREE.Fog(0x87CEEB, 150, 1500);
 
-            // Камера
+            // Camera
             this.camera = new THREE.PerspectiveCamera(
                 60,
                 this.container.clientWidth / this.container.clientHeight,
                 0.1,
                 5000
             );
-            this.camera.position.set(0, 200, 200);
+            this.camera.position.set(0, 220, 260);
 
-            // Рендерер
+            // Renderer
             this.renderer = new THREE.WebGLRenderer({
-                antialias: true,
-                powerPreference: 'high-performance',
-                precision: 'highp'
+            antialias: true,
+            alpha: false,                // у вас фон сцены задаётся сценой/clear color — делаем непрозрачный канвас
+            preserveDrawingBuffer: true, // важно для корректного получения изображения через toDataURL()
             });
+            this.renderer.setPixelRatio(window.devicePixelRatio || 1);
             this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
-            this.renderer.shadowMap.enabled = true;
-            this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-            this.renderer.physicallyCorrectLights = true;
-            this.renderer.outputEncoding = THREE.sRGBEncoding;
-            this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-
-            this.container.innerHTML = '';
+            this.renderer.setClearColor(0x87CEEB); // при желании подберите цвет фона (sky color)
             this.container.appendChild(this.renderer.domElement);
 
-            // OrbitControls
-            this.controls = new THREE.OrbitControls(this.camera, this.renderer.domElement);
+            this.renderer.setSize(
+                this.container.clientWidth,
+                this.container.clientHeight
+            );
+
+            this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            this.renderer.physicallyCorrectLights = true;
+            this.renderer.outputEncoding = THREE.sRGBEncoding;
+
+            // ACES Filmic
+            this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            this.renderer.toneMappingExposure = 1.05;
+
+            this.container.innerHTML = "";
+            this.container.appendChild(this.renderer.domElement);
+
+            // Orbit Controls
+            this.controls = new THREE.OrbitControls(
+                this.camera,
+                this.renderer.domElement
+            );
             this.controls.enableDamping = true;
             this.controls.dampingFactor = 0.05;
-            this.controls.minDistance = 50;
             this.controls.maxDistance = 2000;
-            this.controls.screenSpacePanning = false;
 
-            // Освещение
-            this.setupHighQualityLighting();
+            // Lights
+            this.setupLightingUE();
 
-            // Загрузка PBR-текстур
-            await this.loadPBRTextures();
+            // Load PBR textures for 6 materials
+            await this.loadPBRMaterials();
 
             this.isInitialized = true;
             this.animate();
 
-            console.log('Three.js сцена инициализирована для высокого разрешения.');
-        } catch (error) {
-            console.error('Ошибка инициализации Three.js:', error);
+            console.log("Three.js полностью инициализирован.");
+        } catch (err) {
+            console.error("Ошибка инициализации Three.js:", err);
         }
     }
 
-    // -------------------------------
-    // Загрузка PBR-наборов
-    // -------------------------------
-    async loadPBRTextures() {
-        console.log('Загрузка PBR-текстур: grass, rock, sand, snow...');
-        const loader = new THREE.TextureLoader();
-        const base = 'textures/terrain/';
+    // ----------------------------------------------------------
+    // UE-style lighting (sun + skylight)
+    // ----------------------------------------------------------
 
-        const [grassSet, rockSet, sandSet, snowSet] = await Promise.all([
-            loadPBRSet(loader, base + 'grass/'),
-            loadPBRSet(loader, base + 'rock/'),
-            loadPBRSet(loader, base + 'sand/'),
-            loadPBRSet(loader, base + 'snow/')
-        ]);
+    setupLightingUE() {
+        console.log("Настройка освещения в UE-стиле...");
 
-        this.pbrTextures.grass = grassSet;
-        this.pbrTextures.rock  = rockSet;
-        this.pbrTextures.sand  = sandSet;
-        this.pbrTextures.snow  = snowSet;
-
-        console.log('PBR-наборы загружены:', {
-            grass: !!(grassSet && grassSet.colorMap),
-            rock:  !!(rockSet && rockSet.colorMap),
-            sand:  !!(sandSet && sandSet.colorMap),
-            snow:  !!(snowSet && snowSet.colorMap)
-        });
-    }
-
-    // -------------------------------
-    // Освещение
-    // -------------------------------
-    setupHighQualityLighting() {
-        if (this.lights && this.lights.length) {
-            this.lights.forEach(l => this.scene.remove(l));
-            this.lights = [];
-        }
-
-        const hemi = new THREE.HemisphereLight(0x87ceeb, 0x444444, 0.6);
+        // Hemisphere (Sky Light)
+        const hemi = new THREE.HemisphereLight(0xBBDDFB, 0x444444, 0.55);
         hemi.position.set(0, 500, 0);
         this.scene.add(hemi);
         this.lights.push(hemi);
 
-        const dir = new THREE.DirectionalLight(0xffffff, 0.9);
-        dir.position.set(200, 300, 100);
-        dir.castShadow = true;
-        dir.shadow.mapSize.width = 2048;
-        dir.shadow.mapSize.height = 2048;
-        const d = 800;
-        dir.shadow.camera.left = -d;
-        dir.shadow.camera.right = d;
-        dir.shadow.camera.top = d;
-        dir.shadow.camera.bottom = -d;
-        dir.shadow.camera.near = 1;
-        dir.shadow.camera.far = 2000;
-        if (dir.shadow && dir.shadow.bias !== undefined) {
-            dir.shadow.bias = -0.0005;
-        }
-        this.scene.add(dir);
-        this.lights.push(dir);
+        // Directional Sun Light
+        const sun = new THREE.DirectionalLight(0xffffff, 1.25);
+        sun.position.set(350, 500, 150);
+        sun.castShadow = true;
 
-        const point = new THREE.PointLight(0xfff7e8, 0.2, 1000);
-        point.position.set(-200, 150, -200);
-        this.scene.add(point);
-        this.lights.push(point);
+        sun.shadow.mapSize.width = 4096;
+        sun.shadow.mapSize.height = 4096;
 
-        const ambient = new THREE.AmbientLight(0x404040, 0.25);
+        const d = 500;
+        sun.shadow.camera.left = -d;
+        sun.shadow.camera.right = d;
+        sun.shadow.camera.top = d;
+        sun.shadow.camera.bottom = -d;
+        sun.shadow.camera.near = 1;
+        sun.shadow.camera.far = 2000;
+
+        sun.shadow.bias = -0.0005;
+        this.scene.add(sun);
+        this.lights.push(sun);
+
+        // Ambient Light
+        const ambient = new THREE.AmbientLight(0xffffff, 0.15);
         this.scene.add(ambient);
         this.lights.push(ambient);
     }
 
-    // -------------------------------
-    // Создание террейна
-    // -------------------------------
-    createHighResolutionTerrain(heightmap, width, height, heightScale = 80, lod = 1) {
+    // ----------------------------------------------------------
+    // Load all 6 materials from textureLoader
+    // ----------------------------------------------------------
+
+    async loadPBRMaterials() {
+        console.log("Загрузка 6 PBR материалов...");
+
+        const MATERIALS = ["grass", "dirt", "rock", "cliff", "sand", "snow"];
+
+        // Each material contains:
+        // color, normal, roughness, ao, displacement
+        
+        for (const name of MATERIALS) {
+            const set = this.textureLoader.getTexture(name);
+
+            if (!set || !set.color) {
+                console.warn(`Материал '${name}' отсутствует или поврежден!`);
+                continue;
+            }
+
+            // All textures must have same tiling
+            const repeat = 6; // UE-style tiling amount
+
+            const fix = (tex) => {
+                if (!tex) return null;
+                tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+                tex.repeat.set(repeat, repeat);
+                tex.encoding = (tex === set.color) ? THREE.sRGBEncoding : THREE.LinearEncoding;
+                tex.anisotropy = 8;
+                return tex;
+            };
+
+            this.materials[name] = {
+                color: fix(set.color),
+                normal: fix(set.normal),
+                roughness: fix(set.roughness),
+                ao: fix(set.ao),
+                displacement: fix(set.displacement)
+            };
+        }
+
+        console.log("PBR материалы загружены:", this.materials);
+    }
+
+    captureScreenshot(filename = 'terrain_screenshot.png') {
+    try {
+        // убедимся, что последний кадр отрисован
+        this.renderer.render(this.scene, this.camera);
+
+        const dataURL = this.renderer.domElement.toDataURL('image/png');
+
+        // создаём <a> и инициируем скачивание
+        const a = document.createElement('a');
+        a.href = dataURL;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+
+        console.log('[Screenshot] saved:', filename);
+    } catch (err) {
+        console.error('[Screenshot] failed:', err);
+    }
+    }
+
+    // ----------------------------------------------------------
+    // Создание террейна (геометрия + высоты)
+    // ----------------------------------------------------------
+
+    createTerrain(heightmap, width, height, heightScale = 80, lod = 1) {
         if (!this.isInitialized) {
-            console.error('Three.js не инициализирован');
+            console.error("Renderer ещё не инициализирован");
             return;
         }
 
-        try {
-            console.log('Создание высокоразрешенного террейна.', {
-                width, height, heightScale, lod,
-                totalVertices: width * height
-            });
+        console.log("Создание террейна:", { width, height, heightScale, lod });
 
-            if (this.terrain) {
-                this.scene.remove(this.terrain);
-                if (this.terrain.geometry) this.terrain.geometry.dispose();
-                if (this.terrain.material) this.terrain.material.dispose();
-            }
-
-            const lodFactor = Math.max(1, parseInt(lod) || 1);
-            const segmentsX = Math.max(64, Math.floor((width - 1) / lodFactor));
-            const segmentsY = Math.max(64, Math.floor((height - 1) / lodFactor));
-            console.log(`Улучшенный LOD: ${lodFactor}x, сегменты: ${segmentsX}x${segmentsY}`);
-
-            const geometry = new THREE.PlaneGeometry(width, height, segmentsX, segmentsY);
-
-            if (geometry.attributes.uv && !geometry.attributes.uv2) {
-                geometry.setAttribute(
-                    'uv2',
-                    new THREE.BufferAttribute(geometry.attributes.uv.array, 2)
-                );
-            }
-
-            this.applyHeightsWithLOD(geometry, heightmap, width, height, heightScale, lodFactor);
-
-            geometry.computeVertexNormals();
-            this.smoothNormals(geometry, 2);
-
-            const material = this.createHighQualityMaterial(geometry, heightScale);
-
-            this.terrain = new THREE.Mesh(geometry, material);
-            this.terrain.rotation.x = -Math.PI / 2;
-            this.terrain.receiveShadow = true;
-            this.terrain.castShadow = true;
-            this.terrain.position.set(-width / 2, 0, -height / 2);
-
-            this.scene.add(this.terrain);
-
-            this.updateGeometryStats(geometry);
-            this.setCameraAboveTerrain(width, height, heightScale);
-
-            console.log('Высокоразрешенный террейн создан с улучшенной геометрией.');
-        } catch (error) {
-            console.error('Ошибка создания террейна:', error);
+        if (this.terrain) {
+            this.scene.remove(this.terrain);
+            this.terrain.geometry.dispose();
+            this.terrain.material.dispose();
         }
+
+        // LOD
+        const lodFactor = Math.max(1, lod);
+        const segX = Math.floor((width - 1) / lodFactor);
+        const segY = Math.floor((height - 1) / lodFactor);
+
+        const geometry = new THREE.PlaneGeometry(width, height, segX, segY);
+
+        // Применяем высоты
+        const pos = geometry.attributes.position;
+        let idx = 0;
+
+        for (let y = 0; y <= segY; y++) {
+            for (let x = 0; x <= segX; x++) {
+                const hx = Math.min(width - 1, x * lodFactor);
+                const hy = Math.min(height - 1, y * lodFactor);
+                const h = heightmap[hy * width + hx] * heightScale;
+
+                pos.setZ(idx, h);
+                idx++;
+            }
+        }
+
+        pos.needsUpdate = true;
+
+        // Улучшаем нормали (сглаженные)
+        geometry.computeVertexNormals();
+        this.smoothNormals(geometry, 2);
+
+        // UE-style vertex color ramps (под покраску base-layer)
+        this.applyVertexColors(geometry, heightScale);
+
+        // Материал — UE-style multi-PBR shader
+        const material = this.createUETerrainMaterial(geometry, heightScale, width);
+
+        this.terrain = new THREE.Mesh(geometry, material);
+        this.terrain.rotation.x = -Math.PI / 2;
+        this.terrain.castShadow = true;
+        this.terrain.receiveShadow = true;
+
+        this.terrain.position.set(-width / 2, 0, -height / 2);
+
+        this.scene.add(this.terrain);
+
+        console.log("Террейн создан.");
+        this.positionCamera(width, height, heightScale);
     }
 
+    // ----------------------------------------------------------
     // Сглаживание нормалей
+    // ----------------------------------------------------------
+
     smoothNormals(geometry, iterations = 1) {
-        const position = geometry.attributes.position;
         const normal = geometry.attributes.normal;
+        const pos = geometry.attributes.position;
 
         for (let iter = 0; iter < iterations; iter++) {
-            const tempNormals = new Float32Array(normal.array.length);
+            const temp = new Float32Array(normal.array.length);
 
-            for (let i = 0; i < position.count; i++) {
-                const vertexIndex = i * 3;
-                let sumX = 0, sumY = 0, sumZ = 0;
+            for (let i = 0; i < pos.count; i++) {
+                let sx = 0, sy = 0, sz = 0;
                 let count = 0;
 
-                const radius = 1;
-                for (let j = Math.max(0, i - radius); j < Math.min(position.count, i + radius + 1); j++) {
-                    if (i !== j) {
-                        const jIndex = j * 3;
-                        sumX += normal.array[jIndex];
-                        sumY += normal.array[jIndex + 1];
-                        sumZ += normal.array[jIndex + 2];
-                        count++;
-                    }
+                for (let j = Math.max(0, i - 1); j <= Math.min(pos.count - 1, i + 1); j++) {
+                    sx += normal.getX(j);
+                    sy += normal.getY(j);
+                    sz += normal.getZ(j);
+                    count++;
                 }
 
-                if (count > 0) {
-                    tempNormals[vertexIndex]     = (normal.array[vertexIndex]     + sumX / count) * 0.5;
-                    tempNormals[vertexIndex + 1] = (normal.array[vertexIndex + 1] + sumY / count) * 0.5;
-                    tempNormals[vertexIndex + 2] = (normal.array[vertexIndex + 2] + sumZ / count) * 0.5;
-                }
+                const ix = i * 3;
+                temp[ix]     = sx / count;
+                temp[ix + 1] = sy / count;
+                temp[ix + 2] = sz / count;
             }
 
-            for (let i = 0; i < tempNormals.length; i += 3) {
-                const x = tempNormals[i];
-                const y = tempNormals[i + 1];
-                const z = tempNormals[i + 2];
-                const length = Math.sqrt(x * x + y * y + z * z);
+            for (let i = 0; i < temp.length; i += 3) {
+                const x = temp[i];
+                const y = temp[i + 1];
+                const z = temp[i + 2];
+                const len = Math.sqrt(x * x + y * y + z * z);
 
-                if (length > 0) {
-                    tempNormals[i]     /= length;
-                    tempNormals[i + 1] /= length;
-                    tempNormals[i + 2] /= length;
-                }
+                temp[i]     /= len;
+                temp[i + 1] /= len;
+                temp[i + 2] /= len;
             }
 
-            normal.array.set(tempNormals);
+            normal.array.set(temp);
         }
 
         normal.needsUpdate = true;
     }
 
-    applyHeightsWithLOD(geometry, heightmap, width, height, heightScale, lodFactor) {
-        const vertices = geometry.attributes.position.array;
-        const segmentsX = Math.max(64, Math.floor((width - 1) / lodFactor));
-        const segmentsY = Math.max(64, Math.floor((height - 1) / lodFactor));
+    // ----------------------------------------------------------
+    // Vertex colors (UE5-style base layer mask)
+    // ----------------------------------------------------------
 
-        let vertexIndex = 0;
+    applyVertexColors(geometry, heightScale) {
+        const pos = geometry.attributes.position;
+        const colors = [];
 
-        for (let y = 0; y <= segmentsY; y++) {
-            for (let x = 0; x <= segmentsX; x++) {
-                const origX = Math.min(x * lodFactor, width - 1);
-                const origY = Math.min(y * lodFactor, height - 1);
+        const c = new THREE.Color();
 
-                const heightValue = this.enhancedInterpolate(heightmap, width, height, origX, origY);
+        for (let i = 0; i < pos.count; i++) {
+            const h = pos.getZ(i) / heightScale;
 
-                vertices[vertexIndex * 3 + 2] = heightValue * heightScale;
-                vertexIndex++;
-            }
+            if (h < 0.2)       c.setRGB(0.6, 0.5, 0.4); // dirt
+            else if (h < 0.45) c.setRGB(0.2, 0.5, 0.2); // grass
+            else if (h < 0.7)  c.setRGB(0.5, 0.45, 0.35); // rock
+            else               c.setRGB(0.9, 0.9, 0.9); // snow
+
+            colors.push(c.r, c.g, c.b);
         }
+
+        geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
     }
 
-    enhancedInterpolate(heightmap, width, height, x, y) {
-        const x1 = Math.floor(x);
-        const x2 = Math.min(x1 + 1, width - 1);
-        const y1 = Math.floor(y);
-        const y2 = Math.min(y1 + 1, height - 1);
+    // ----------------------------------------------------------
+    // Позиционирование камеры над террейном
+    // ----------------------------------------------------------
 
-        const dx = x - x1;
-        const dy = y - y1;
+    positionCamera(width, height, heightScale) {
+        let maxH = 0;
+        const vertices = this.terrain.geometry.attributes.position.array;
 
-        const q11 = heightmap[y1 * width + x1];
-        const q12 = heightmap[y2 * width + x1];
-        const q21 = heightmap[y1 * width + x2];
-        const q22 = heightmap[y2 * width + x2];
-
-        const r1 = q11 * (1 - dx) + q21 * dx;
-        const r2 = q12 * (1 - dx) + q22 * dx;
-        const baseHeight = r1 * (1 - dy) + r2 * dy;
-
-        if (x1 > 0 && x1 < width - 2 && y1 > 0 && y1 < height - 2) {
-            let smoothSum = 0;
-            let smoothCount = 0;
-
-            for (let dy2 = -1; dy2 <= 1; dy2++) {
-                for (let dx2 = -1; dx2 <= 1; dx2++) {
-                    const nx = Math.max(0, Math.min(width  - 1, x1 + dx2));
-                    const ny = Math.max(0, Math.min(height - 1, y1 + dy2));
-                    smoothSum += heightmap[ny * width + nx];
-                    smoothCount++;
-                }
-            }
-
-            const smoothAvg = smoothSum / smoothCount;
-            return baseHeight * 0.8 + smoothAvg * 0.2;
+        for (let i = 2; i < vertices.length; i += 3) {
+            if (vertices[i] > maxH) maxH = vertices[i];
         }
 
-        return baseHeight;
+        const size = Math.max(width, height);
+
+        this.camera.position.set(size * 0.6, maxH * 2.2 + 50, size * 0.6);
+        this.controls.target.set(0, maxH * 0.35, 0);
+        this.controls.update();
     }
+    // ----------------------------------------------------------
+    // Create UE-style multi-material PBR shader
+    // ----------------------------------------------------------
 
-    // -------------------------------
-    // PBR-материал со смешиванием grass/sand/rock/snow
-    // -------------------------------
-    createHighQualityMaterial(geometry, heightScale) {
-        this.addDetailedVertexColors(geometry, heightScale);
-
-        if (geometry.attributes.uv && !geometry.attributes.uv2) {
-            geometry.setAttribute(
-                'uv2',
-                new THREE.BufferAttribute(geometry.attributes.uv.array, 2)
-            );
-        }
-
-        const grass = this.pbrTextures.grass || {};
-        const sand  = this.pbrTextures.sand  || grass;
-        const rock  = this.pbrTextures.rock  || grass;
-        const snow  = this.pbrTextures.snow  || grass;
-
-        const terrainSize = Math.max(
-            geometry.parameters.width  || 256,
-            geometry.parameters.height || 256
-        );
-
+    createUETerrainMaterial(geometry, heightScale, terrainSize) {
         const material = new THREE.MeshStandardMaterial({
             vertexColors: true,
-            map: grass.colorMap || null,
-            normalMap: grass.normalMap || null,
-            roughnessMap: grass.roughnessMap || null,
-            aoMap: grass.aoMap || null,
             roughness: 1.0,
             metalness: 0.0,
-            flatShading: false,
-            side: THREE.DoubleSide,
-            polygonOffset: true,
-            polygonOffsetFactor: 1,
-            polygonOffsetUnits: 1
         });
-
-        const repeat = terrainSize / 40;
-        [sand, grass, rock, snow].forEach(set => {
-            if (!set || !set.colorMap) return;
-            set.colorMap.wrapS = set.colorMap.wrapT = THREE.RepeatWrapping;
-            set.colorMap.repeat.set(repeat, repeat);
-        });
-
-        // Шейдерное смешивание 4 текстур по высоте и наклону
+        material.userData.grassScale = 20.0;
+        material.userData.dirtScale  = 15.0;
+        material.userData.rockScale  = 12.0;
+        material.userData.cliffScale = 10.0;
+        material.userData.sandScale  = 18.0;
+        material.userData.snowScale  = 14.0;
         material.onBeforeCompile = (shader) => {
-            // uniforms
-            shader.uniforms.sandMap  = { value: sand.colorMap  || grass.colorMap };
-            shader.uniforms.grassMap = { value: grass.colorMap || sand.colorMap };
-            shader.uniforms.rockMap  = { value: rock.colorMap  || grass.colorMap };
-            shader.uniforms.snowMap  = { value: snow.colorMap  || grass.colorMap };
+            shader.uniforms.grassScale = { value: material.userData.grassScale };
+            shader.uniforms.dirtScale  = { value: material.userData.dirtScale };
+            shader.uniforms.rockScale  = { value: material.userData.rockScale };
+            shader.uniforms.cliffScale = { value: material.userData.cliffScale };
+            shader.uniforms.sandScale  = { value: material.userData.sandScale };
+            shader.uniforms.snowScale  = { value: material.userData.snowScale };
 
-            shader.uniforms.heightScale = { value: heightScale };
-            shader.uniforms.waterLevel  = { value: 0.15 };
+            shader.uniforms.grassColorMap = { value: this.materials.grass.color };
+            shader.uniforms.dirtColorMap  = { value: this.materials.dirt.color };
+            shader.uniforms.rockColorMap  = { value: this.materials.rock.color };
+            shader.uniforms.cliffColorMap = { value: this.materials.cliff.color };
+            shader.uniforms.sandColorMap  = { value: this.materials.sand.color };
+            shader.uniforms.snowColorMap  = { value: this.materials.snow.color };
+
+            shader.uniforms.grassNormalMap = { value: this.materials.grass.normal };
+            shader.uniforms.dirtNormalMap  = { value: this.materials.dirt.normal };
+            shader.uniforms.rockNormalMap  = { value: this.materials.rock.normal };
+            shader.uniforms.cliffNormalMap = { value: this.materials.cliff.normal };
+            shader.uniforms.sandNormalMap  = { value: this.materials.sand.normal };
+            shader.uniforms.snowNormalMap  = { value: this.materials.snow.normal };
+
+            shader.uniforms.grassRoughnessMap = { value: this.materials.grass.roughness };
+            shader.uniforms.dirtRoughnessMap  = { value: this.materials.dirt.roughness };
+            shader.uniforms.rockRoughnessMap  = { value: this.materials.rock.roughness };
+            shader.uniforms.cliffRoughnessMap = { value: this.materials.cliff.roughness };
+            shader.uniforms.sandRoughnessMap  = { value: this.materials.sand.roughness };
+            shader.uniforms.snowRoughnessMap  = { value: this.materials.snow.roughness };
+
+            shader.uniforms.grassAOMap = { value: this.materials.grass.ao };
+            shader.uniforms.dirtAOMap  = { value: this.materials.dirt.ao };
+            shader.uniforms.rockAOMap  = { value: this.materials.rock.ao };
+            shader.uniforms.cliffAOMap = { value: this.materials.cliff.ao };
+            shader.uniforms.sandAOMap  = { value: this.materials.sand.ao };
+            shader.uniforms.snowAOMap  = { value: this.materials.snow.ao };
+
+            shader.uniforms.grassHeightMap = { value: this.materials.grass.displacement };
+            shader.uniforms.dirtHeightMap  = { value: this.materials.dirt.displacement };
+            shader.uniforms.rockHeightMap  = { value: this.materials.rock.displacement };
+            shader.uniforms.cliffHeightMap = { value: this.materials.cliff.displacement };
+            shader.uniforms.sandHeightMap  = { value: this.materials.sand.displacement };
+            shader.uniforms.snowHeightMap  = { value: this.materials.snow.displacement };
+
             shader.uniforms.terrainSize = { value: terrainSize };
+            shader.uniforms.heightScale = { value: heightScale };
+            shader.uniforms.parallaxScale = { value: 0.03 };
+            shader.uniforms.waterLevel01  = { value: this.waterLevel01 };
 
-            // vertex: добавляем vWorldPos, vSlope
-            shader.vertexShader = shader.vertexShader
-                .replace(
-                    '#include <common>',
-                    `
-                    #include <common>
-                    varying vec3 vWorldPos;
-                    varying float vSlope;
-                    `
-                )
-                .replace(
-                    '#include <worldpos_vertex>',
-                    `
-                    #include <worldpos_vertex>
-                    vWorldPos = worldPosition.xyz;
-                    vec3 worldNormal = normalize( ( modelMatrix * vec4( objectNormal, 0.0 ) ).xyz );
-                    vSlope = 1.0 - clamp( dot( worldNormal, vec3(0.0, 1.0, 0.0) ), 0.0, 1.0 );
-                    `
+            // ----------------------------------------------------
+            // Добавляем мировые позиции и нормали
+            // ----------------------------------------------------
+            shader.vertexShader = shader.vertexShader.replace(
+                `#include <common>`,
+                `
+                #include <common>
+                varying vec3 vWorldPos;
+                varying vec3 vWorldNormal;
+                `
+            );
+
+            shader.vertexShader = shader.vertexShader.replace(
+                `#include <fog_vertex>`,
+                `
+                vWorldPos = (modelMatrix * vec4(position, 1.0)).xyz;
+                vWorldNormal = normalize(mat3(modelMatrix) * normal);
+                #include <fog_vertex>
+                `
+            );
+
+            // ----------------------------------------------------
+            // Фрагментный шейдер — основной UE-style blend
+            // ----------------------------------------------------
+            shader.fragmentShader = shader.fragmentShader.replace(
+                `#include <map_pars_fragment>`,
+                `
+                #include <map_pars_fragment>
+                
+                uniform float grassScale;
+                uniform float dirtScale;
+                uniform float rockScale;
+                uniform float cliffScale;
+                uniform float sandScale;
+                uniform float snowScale;
+
+                varying vec3 vWorldPos;
+                varying vec3 vWorldNormal;
+
+                uniform float terrainSize;
+                uniform float heightScale;
+                uniform float parallaxScale;
+                uniform float waterLevel01; 
+
+                // текстуры
+                uniform sampler2D grassColorMap;
+                uniform sampler2D dirtColorMap;
+                uniform sampler2D rockColorMap;
+                uniform sampler2D cliffColorMap;
+                uniform sampler2D sandColorMap;
+                uniform sampler2D snowColorMap;
+
+                uniform sampler2D grassNormalMap;
+                uniform sampler2D dirtNormalMap;
+                uniform sampler2D rockNormalMap;
+                uniform sampler2D cliffNormalMap;
+                uniform sampler2D sandNormalMap;
+                uniform sampler2D snowNormalMap;
+
+                uniform sampler2D grassRoughnessMap;
+                uniform sampler2D dirtRoughnessMap;
+                uniform sampler2D rockRoughnessMap;
+                uniform sampler2D cliffRoughnessMap;
+                uniform sampler2D sandRoughnessMap;
+                uniform sampler2D snowRoughnessMap;
+
+                uniform sampler2D grassAOMap;
+                uniform sampler2D dirtAOMap;
+                uniform sampler2D rockAOMap;
+                uniform sampler2D cliffAOMap;
+                uniform sampler2D sandAOMap;
+                uniform sampler2D snowAOMap;
+
+                uniform sampler2D grassHeightMap;
+                uniform sampler2D dirtHeightMap;
+                uniform sampler2D rockHeightMap;
+                uniform sampler2D cliffHeightMap;
+                uniform sampler2D sandHeightMap;
+                uniform sampler2D snowHeightMap;
+
+                // ------------------------------------------------
+                // Parallax Occlusion Mapping (UE5-inspired)
+                // ------------------------------------------------
+                vec2 parallaxUV(sampler2D hMap, vec2 uv, vec3 viewDir) {
+                    float minLayers = 12.0;
+                    float maxLayers = 30.0;
+                    float numLayers = mix(maxLayers, minLayers, abs(viewDir.y));
+                    float layerDepth = 1.0 / numLayers;
+                    float currentLayer = 0.0;
+
+                    vec2 P = viewDir.xz * parallaxScale;
+                    vec2 delta = P / numLayers;
+
+                    vec2 newUV = uv;
+                    float currentHeight = texture2D(hMap, newUV).r;
+
+                    while (currentLayer < currentHeight) {
+                        newUV -= delta;
+                        currentHeight = texture2D(hMap, newUV).r;
+                        currentLayer += layerDepth;
+                    }
+
+                    return newUV;
+                }
+                `
+            );
+
+            // ----------------------------------------------------
+            // Основной UE5 blended shading
+            // ----------------------------------------------------
+            shader.fragmentShader = shader.fragmentShader.replace(
+                `#include <map_fragment>`,
+                `
+                vec2 baseUV = vWorldPos.xz / terrainSize;
+                vec3 viewDir = normalize(cameraPosition - vWorldPos);
+
+                // наклон поверхности: 0 = плоско, 1 = почти вертикально
+                float slope = 1.0 - abs(dot(vWorldNormal, vec3(0.0, 1.0, 0.0)));
+
+                // нормированная высота (чуть растягиваем диапазон)
+                float h = clamp(vWorldPos.y / (heightScale * 0.95), 0.0, 1.0);
+
+                // вспомогательные маски по высоте
+                float hLow  = smoothstep(0.0, 0.25, h);   // низины
+                float hMid  = smoothstep(0.2, 0.7,  h);   // средние высоты
+                float hHigh = smoothstep(0.55, 1.0, h);   // высокогорье
+
+                // ------------------------------------------------
+                // Веса слоёв (более "горная" логика)
+                // ------------------------------------------------
+
+                // песок — у воды и в низинах, почти без наклона
+                float wSand = hLow * (1.0 - slope) * 0.9;
+
+                // трава — средние высоты, пологие склоны
+                float wGrass = hMid * (1.0 - slope * 0.8);
+
+                // земля — переходы: от песка к траве и под скалами
+                float wDirt = mix(
+                    hLow * (0.4 + 0.6 * slope),    // низкие, чуть наклонённые участки
+                    (1.0 - hHigh) * slope,         // под скалами
+                    0.5
                 );
 
-            // fragment: добавляем uniforms + varyings
-            shader.fragmentShader = shader.fragmentShader
-                .replace(
-                    '#include <map_pars_fragment>',
-                    `
-                    #include <map_pars_fragment>
-                    uniform sampler2D sandMap;
-                    uniform sampler2D grassMap;
-                    uniform sampler2D rockMap;
-                    uniform sampler2D snowMap;
-                    uniform float heightScale;
-                    uniform float waterLevel;
-                    uniform float terrainSize;
-                    varying vec3 vWorldPos;
-                    varying float vSlope;
-                    `
-                )
-                .replace(
-                    '#include <map_fragment>',
-                    `
-                    // мировые UV по XZ
-                    vec2 worldUV = vWorldPos.xz / terrainSize;
+                // скалы — крутые склоны на средней и высокой высоте
+                float wRock = hMid * hHigh * slope;
 
-                    vec4 sandColor  = texture2D( sandMap,  worldUV );
-                    vec4 grassColor = texture2D( grassMap, worldUV );
-                    vec4 rockColor  = texture2D( rockMap,  worldUV );
-                    vec4 snowColor  = texture2D( snowMap,  worldUV );
+                // отвесные склоны/обрывы — очень крутой склон в верхней зоне
+                float wCliff = pow(slope, 2.0) * hHigh;
 
-                    // высота (0..1)
-                    float h = clamp( vWorldPos.y / heightScale, 0.0, 1.0 );
-                    // крутизна склона (0 – плоско, 1 – очень круто)
-                    float slope = clamp( vSlope, 0.0, 1.0 );
+                // снег — высокогорье, преимущественно на относительных плато (не на стенках)
+                float wSnow = pow(hHigh, 2.0) * (1.0 - slope * 0.7);
 
-                    // веса слоёв
-                    float wSand  = smoothstep( 0.0, waterLevel + 0.05, 1.0 - h ); // у воды
-                    float wSnow  = smoothstep( 0.75, 1.0, h );                    // вершины
-                    float wRock  = smoothstep( 0.3, 0.9, slope );                // склоны
-                    float wGrass = 1.0;
+                // ------------------------------------------------
+                // Shoreline: усиливаем песок вокруг уровня воды
+                // ------------------------------------------------
+                float shoreWidth = 0.04;                    // ширина береговой зоны в 0..1
+                float dh = abs(h - waterLevel01);           // высотное расстояние до уровня воды
+                float shore = 1.0 - smoothstep(shoreWidth, shoreWidth * 2.0, dh);
 
-                    wGrass -= wSand * 0.7;
-                    wGrass -= wRock * 0.8;
-                    wGrass -= wSnow * 0.9;
-                    wGrass = clamp( wGrass, 0.0, 1.0 );
+                // Добавляем песка у берега (на пологих участках)
+                wSand += shore * (1.0 - slope) * 2.0;
 
-                    float sumW = wSand + wGrass + wRock + wSnow;
-                    if (sumW < 0.001) sumW = 1.0;
-                    wSand  /= sumW;
-                    wGrass /= sumW;
-                    wRock  /= sumW;
-                    wSnow  /= sumW;
+                // небольшая стабилизация, чтобы не было нулевой суммы
+                wSand  = max(wSand,  0.0001);
+                wGrass = max(wGrass, 0.0001);
+                wDirt  = max(wDirt,  0.0001);
+                wRock  = max(wRock,  0.0001);
+                wCliff = max(wCliff, 0.0001);
+                wSnow  = max(wSnow,  0.0001);
 
-                    vec4 blended =
-                        sandColor  * wSand +
-                        grassColor * wGrass +
-                        rockColor  * wRock +
-                        snowColor  * wSnow;
+                // нормализация
+                float sumW = wSand + wGrass + wDirt + wRock + wCliff + wSnow;
+                wSand  /= sumW;
+                wGrass /= sumW;
+                wDirt  /= sumW;
+                wRock  /= sumW;
+                wCliff /= sumW;
+                wSnow  /= sumW;
 
-                    diffuseColor *= blended;
-                    `
-                );
+                // ------------------------------------------------
+                // Получаем UV с Parallax Mapping
+                // ------------------------------------------------
+                vec2 sandUV  = parallaxUV(sandHeightMap,  baseUV * sandScale,  viewDir);
+                vec2 grassUV = parallaxUV(grassHeightMap, baseUV * grassScale, viewDir);
+                vec2 dirtUV  = parallaxUV(dirtHeightMap,  baseUV * dirtScale,  viewDir);
+                vec2 rockUV  = parallaxUV(rockHeightMap,  baseUV * rockScale,  viewDir);
+                vec2 cliffUV = parallaxUV(cliffHeightMap, baseUV * cliffScale, viewDir);
+                vec2 snowUV  = parallaxUV(snowHeightMap,  baseUV * snowScale,  viewDir);
+
+                // ------------------------------------------------
+                // Color blending
+                // ------------------------------------------------
+                vec3 colSand  = texture2D(sandColorMap,  sandUV).rgb;
+                vec3 colGrass = texture2D(grassColorMap, grassUV).rgb;
+                vec3 colDirt  = texture2D(dirtColorMap,  dirtUV).rgb;
+                vec3 colRock  = texture2D(rockColorMap,  rockUV).rgb;
+                vec3 colCliff = texture2D(cliffColorMap, cliffUV).rgb;
+                vec3 colSnow  = texture2D(snowColorMap,  snowUV).rgb;
+
+                vec3 blended = colSand  * wSand  +
+                            colGrass * wGrass +
+                            colDirt  * wDirt  +
+                            colRock  * wRock  +
+                            colCliff * wCliff +
+                            colSnow  * wSnow;
+
+                // sRGB → linear
+                blended = pow(blended, vec3(2.2));
+
+                diffuseColor.rgb *= blended;
+                `
+            );
+            material.userData.shader = shader;
         };
 
         return material;
     }
 
-    // -------------------------------
-    // Раскраска по высоте (vertex colors)
-    // -------------------------------
-    addDetailedVertexColors(geometry, heightScale, waterLevel = 0.15) {
-        const colors = [];
-        const position = geometry.attributes.position;
-        const color = new THREE.Color();
-
-        for (let i = 0; i < position.count; i++) {
-            const z = position.getZ(i);
-            const normalizedHeight = z / heightScale;
-            const adjustedHeight = Math.max(0, normalizedHeight - waterLevel) / (1 - waterLevel);
-
-            if (normalizedHeight < waterLevel) {
-                const intensity = normalizedHeight / waterLevel;
-                if (intensity < 0.3) {
-                    color.setRGB(0.0, 0.0, 0.1 + intensity * 0.3);
-                } else if (intensity < 0.7) {
-                    color.setRGB(0.0, 0.2, 0.5 + intensity * 0.3);
-                } else {
-                    color.setRGB(0.1, 0.4 + intensity * 0.3, 0.7 + intensity * 0.2);
-                }
-            } else if (adjustedHeight < 0.1) {
-                const intensity = adjustedHeight / 0.1;
-                color.setRGB(0.9, 0.8 + intensity * 0.1, 0.4);
-            } else if (adjustedHeight < 0.4) {
-                const intensity = adjustedHeight / 0.4;
-                color.setRGB(0.1, 0.4 + intensity * 0.4, 0.1);
-            } else if (adjustedHeight < 0.7) {
-                const intensity = (adjustedHeight - 0.4) / 0.3;
-                color.setRGB(0.3 + intensity * 0.3, 0.2 + intensity * 0.2, 0.1);
-            } else if (adjustedHeight < 0.9) {
-                const intensity = (adjustedHeight - 0.7) / 0.2;
-                const gray = 0.3 + intensity * 0.4;
-                color.setRGB(gray, gray, gray);
-            } else {
-                const intensity = (adjustedHeight - 0.9) / 0.1;
-                const white = 0.6 + intensity * 0.4;
-                color.setRGB(white, white, white);
-            }
-
-            colors.push(color.r, color.g, color.b);
-        }
-
-        geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-    }
-
-    // -------------------------------
-    // Камера / статистика / прочее
-    // -------------------------------
-    setCameraAboveTerrain(width, height, heightScale) {
-        if (!this.terrain || !this.camera) return;
-
-        const geometry = this.terrain.geometry;
-        const vertices = geometry.attributes.position.array;
-
-        let maxHeight = 0;
-        for (let i = 2; i < vertices.length; i += 3) {
-            maxHeight = Math.max(maxHeight, vertices[i]);
-        }
-
-        const terrainSize = Math.max(width, height);
-        const maxTerrainHeight = maxHeight;
-
-        const baseDistance = terrainSize * 0.8;
-        const heightBonus = maxTerrainHeight * 1.5;
-        const cameraHeight = Math.max(baseDistance, heightBonus);
-
-        const cameraDistance = cameraHeight * 1.2;
-        this.camera.position.set(
-            cameraDistance * 0.7,
-            cameraHeight,
-            cameraDistance * 0.7
-        );
-
-        this.controls.target.set(0, maxTerrainHeight * 0.3, 0);
-        this.controls.update();
-
-        this.controls.minDistance = terrainSize * 0.3;
-        this.controls.maxDistance = terrainSize * 3;
-
-        this.camera.near = 1;
-        this.camera.far = Math.max(5000, terrainSize * 5);
-        this.camera.updateProjectionMatrix();
-
-        console.log('Камера установлена над террейном:', {
-            terrainSize,
-            maxHeight: maxTerrainHeight,
-            cameraPosition: this.camera.position,
-            cameraTarget: this.controls.target
-        });
-    }
-
-    updateExistingTerrain(heightmap, heightScale, waterLevel = 0.15) {
-        if (!this.terrain || !heightmap) return;
-
-        const geometry = this.terrain.geometry;
-        const vertices = geometry.attributes.position.array;
-        const size = Math.sqrt(heightmap.length);
-
-        for (let i = 0, j = 0; i < vertices.length; i += 3, j++) {
-            if (j < heightmap.length) {
-                vertices[i + 2] = heightmap[j] * heightScale;
-            }
-        }
-
-        geometry.attributes.position.needsUpdate = true;
-        geometry.computeVertexNormals();
-
-        this.addDetailedVertexColors(geometry, heightScale, waterLevel);
-        geometry.attributes.color.needsUpdate = true;
-
-        this.setCameraAboveTerrain(size, size, heightScale);
-
-        console.log('Террейн обновлен в реальном времени');
-    }
-
-    fitCameraToTerrain(width, height, heightScale) {
-        this.setCameraAboveTerrain(width, height, heightScale);
-    }
-
-    setViewMode(mode) {
-        if (!this.terrain) return;
-
-        const material = this.terrain.material;
-        if (mode === 'wireframe') {
-            material.wireframe = true;
-        } else {
-            material.wireframe = false;
-        }
-        material.needsUpdate = true;
-    }
-
-    getTerrainIntersection(mouseX, mouseY) {
-        if (!this.terrain) return null;
-
-        this.mouse.x = mouseX;
-        this.mouse.y = mouseY;
-
-        this.raycaster.setFromCamera(this.mouse, this.camera);
-        const intersects = this.raycaster.intersectObject(this.terrain);
-        return intersects.length > 0 ? intersects[0] : null;
-    }
-
-    getHeightAtWorldPosition(worldPos) {
-        if (!this.terrain) return 0;
-
-        const localPos = worldPos.clone();
-        this.terrain.worldToLocal(localPos);
-        return localPos.y;
-    }
-
-    updateGeometryStats(geometry) {
-        const vertexCount = geometry.attributes.position.count;
-        const polyCount = vertexCount / 3;
-
-        const vEl = document.getElementById('vertexCount');
-        const pEl = document.getElementById('polyCount');
-        if (vEl) vEl.textContent = `Вершины: ${vertexCount.toLocaleString()}`;
-        if (pEl) pEl.textContent = `Полигоны: ${Math.floor(polyCount).toLocaleString()}`;
-    }
-
-    showLoading(show, text = 'Загрузка...', progress = 0) {
-        const loading = document.getElementById('loading');
-        if (loading) {
-            loading.style.display = show ? 'flex' : 'none';
-            const textEl = loading.querySelector('.loading-text');
-            const progressEl = document.getElementById('loadingProgress');
-
-            if (textEl) textEl.textContent = text;
-            if (progressEl) progressEl.textContent = `${Math.round(progress)}%`;
-        }
-    }
-
-    takeScreenshot() {
-        if (!this.renderer) return;
-
-        this.renderer.domElement.toBlob(function (blob) {
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `terrain_screenshot_${Date.now()}.png`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-        }, 'image/png');
-    }
-
-    animate() {
+    // ----------------------------------------------------------
+    // ВОДА: динамическая, с волнами и френелем
+    // ----------------------------------------------------------
+    updateWater(width, height, heightScale, waterLevel) {
         if (!this.isInitialized) return;
 
+        const y = heightScale * waterLevel; // waterLevel 0..1
+
+        this.waterLevel01 = waterLevel;
+
+        if (this.terrain &&
+            this.terrain.material &&
+            this.terrain.material.userData &&
+            this.terrain.material.userData.shader) {
+
+            const shader = this.terrain.material.userData.shader;
+            if (shader.uniforms && shader.uniforms.waterLevel01) {
+                shader.uniforms.waterLevel01.value = waterLevel;
+            }
+        }
+
+        if (!this.waterMaterial) {
+            // uniforms для шейдера воды
+            const uniforms = {
+                uTime:      { value: 0.0 },
+                uDeepColor: { value: new THREE.Color(0x04101f) },  // глубокая вода
+                uShallowColor: { value: new THREE.Color(0x1b5c8a) }, // мелко
+                uFoamColor: { value: new THREE.Color(0xffffff) },
+                uOpacity:   { value: 0.8 }
+            };
+
+            this.waterMaterial = new THREE.ShaderMaterial({
+                uniforms,
+                transparent: true,
+                depthWrite: false,
+                side: THREE.DoubleSide,
+                vertexShader: `
+                    varying vec2 vUv;
+                    varying vec3 vWorldPos;
+
+                    void main() {
+                        vUv = uv;
+                        vec4 worldPos = modelMatrix * vec4(position, 1.0);
+                        vWorldPos = worldPos.xyz;
+                        gl_Position = projectionMatrix * viewMatrix * worldPos;
+                    }
+                `,
+                fragmentShader: `
+                    uniform float uTime;
+                    uniform vec3 uDeepColor;
+                    uniform vec3 uShallowColor;
+                    uniform vec3 uFoamColor;
+                    uniform float uOpacity;
+
+                    varying vec2 vUv;
+                    varying vec3 vWorldPos;
+
+                    void main() {
+                        // направление камеры
+                        vec3 viewDir = normalize(cameraPosition - vWorldPos);
+
+                        // фейковые волны
+                        float wave1 = sin(vUv.x * 40.0 + uTime * 0.7) * 0.04;
+                        float wave2 = sin(vUv.y * 30.0 - uTime * 0.5) * 0.03;
+                        float wave3 = sin((vUv.x + vUv.y) * 25.0 + uTime * 0.9) * 0.02;
+                        float waves = wave1 + wave2 + wave3;
+
+                        // базовая глубина (можно потом завязать на real depth)
+                        float depthFactor = 0.6 + waves; // 0..1
+                        depthFactor = clamp(depthFactor, 0.0, 1.0);
+
+                        vec3 waterColor = mix(uDeepColor, uShallowColor, depthFactor);
+
+                        // френель: сильнее по краям
+                        float fresnel = pow(1.0 - max(dot(viewDir, vec3(0.0, 1.0, 0.0)), 0.0), 3.0);
+
+                        // пенка на пиках волн
+                        float foam = smoothstep(0.045, 0.08, abs(waves));
+                        vec3 foamColor = uFoamColor * foam * 0.6;
+
+                        vec3 finalColor = waterColor + foamColor;
+                        finalColor += fresnel * 0.15; // чуть высветляем края
+
+                        gl_FragColor = vec4(finalColor, uOpacity);
+                    }
+                `
+            });
+
+            // создаём меш воды
+            const geom = new THREE.PlaneGeometry(width, height, 1, 1);
+            const water = new THREE.Mesh(geom, this.waterMaterial);
+            water.rotation.x = -Math.PI / 2;
+            water.position.set(-width / 2, y, -height / 2);
+            water.receiveShadow = false;
+
+            this.scene.add(water);
+            this.water = water;
+            } else {
+                // просто обновляем положение/размер
+                this.water.position.y = y;
+                this.water.position.x = -width / 2;
+                this.water.position.z = -height / 2;
+
+                this.water.geometry.dispose();
+                this.water.geometry = new THREE.PlaneGeometry(width, height, 1, 1);
+            }
+    }
+
+    // Анимация
+       animate() {
         requestAnimationFrame(() => this.animate());
+
+        const dt = this.clock.getDelta();
+        if (this.waterMaterial && this.waterMaterial.uniforms && this.waterMaterial.uniforms.uTime) {
+            this.waterMaterial.uniforms.uTime.value += dt;
+        }
 
         if (this.controls) {
             this.controls.update();
@@ -710,28 +761,78 @@ class ThreeRenderer {
         this.renderer.render(this.scene, this.camera);
     }
 
+    // ----------------------------------------------------------
+    // Resize
+    // ----------------------------------------------------------
     onResize() {
         if (!this.isInitialized) return;
 
-        this.camera.aspect = this.container.clientWidth / this.container.clientHeight;
+        this.camera.aspect =
+            this.container.clientWidth / this.container.clientHeight;
         this.camera.updateProjectionMatrix();
-        this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
+
+        this.renderer.setSize(
+            this.container.clientWidth,
+            this.container.clientHeight
+        );
     }
 
+    // ----------------------------------------------------------
+    // Получение пересечения по лучу
+    // ----------------------------------------------------------
+    getTerrainIntersection(mouseX, mouseY) {
+        if (!this.terrain) return null;
+
+        this.mouse.x = mouseX;
+        this.mouse.y = mouseY;
+
+        this.raycaster.setFromCamera(this.mouse, this.camera);
+        const hits = this.raycaster.intersectObject(this.terrain);
+
+        if (hits.length > 0) return hits[0];
+        return null;
+    }
+
+    // ----------------------------------------------------------
+    // Получение высоты по мировой позиции
+    // ----------------------------------------------------------
+    getHeightAt(worldPos) {
+        if (!this.terrain) return 0;
+        const local = worldPos.clone();
+        this.terrain.worldToLocal(local);
+        return local.y;
+    }
+
+    // ----------------------------------------------------------
+    // Уничтожение сцены и рендера
+    // ----------------------------------------------------------
     dispose() {
-        if (this.terrain) {
-            this.scene.remove(this.terrain);
-            if (this.terrain.geometry) this.terrain.geometry.dispose();
-            if (this.terrain.material) this.terrain.material.dispose();
-        }
+    console.log("Удаление ThreeRenderer...");
 
-        this.lights.forEach(light => this.scene.remove(light));
-        this.lights = [];
+    if (this.terrain) {
+        this.scene.remove(this.terrain);
+        if (this.terrain.geometry) this.terrain.geometry.dispose();
+        if (this.terrain.material) this.terrain.material.dispose();
+    }
+    
+    if (this.water) {
 
-        if (this.renderer) {
-            this.renderer.dispose();
-        }
+        this.scene.remove(this.water);
+        if (this.water.geometry) this.water.geometry.dispose();
+        if (this.water.material) this.water.material.dispose();
+        this.water = null;
+        this.waterMaterial = null;
+    }
+
+    this.lights.forEach(l => this.scene.remove(l));
+    this.lights = [];
+
+    if (this.renderer) {
+        this.renderer.dispose();
+    }
 
         this.isInitialized = false;
     }
+
+
 }
