@@ -11,7 +11,7 @@ class TerrainEditor {
         this.brushSize = 10;                // в единицах мира (плохой UX, но сохранил как раньше)
         this.brushStrength = 0.3;     
         this.brushEnabled = true;      // 0..1
-        this.originalHeightmap = null;
+        this.baseHeightmap = null; 
 
         // Состояние мыши
         this.lastMouse = { x: 0, y: 0 };

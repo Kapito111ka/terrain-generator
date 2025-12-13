@@ -302,16 +302,6 @@ class TerrainGenerator {
             const size = Math.sqrt(this.currentHeightmap.length) | 0;
             const lod = this.getLODValue();
             this.threeRenderer.createTerrain(this.currentHeightmap, size, size, heightScale, lod);
-            try {
-                if (this.terrainEditor && this.currentHeightmap) {
-                    // Сохраняем копию оригинальной карты для возможности reset (undo to original)
-                    this.terrainEditor.originalHeightmap = new Float32Array(this.currentHeightmap);
-                }
-            } catch(e) {
-                console.warn('save originalHeightmap error', e);
-            }
-
-
             this.threeRenderer.updateWater(size, size, heightScale, waterLevel);
         }
 
@@ -453,7 +443,9 @@ class TerrainGenerator {
             this.normalizeHeightmap(heightmap);
             heightmap = this.sanitizeHeightmap(heightmap);
             this.currentHeightmap = heightmap;
-
+            if (this.terrainEditor) {
+                this.terrainEditor.baseHeightmap = new Float32Array(heightmap);
+            }
 
             if (showProgress) this.updateProgress(90, 'Создание 3D-мешка...');
 
