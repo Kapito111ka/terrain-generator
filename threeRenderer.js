@@ -264,9 +264,66 @@ class ThreeRenderer {
         this.scene.add(this.terrain);
 
         console.log("Террейн создан.");
+        
         this.positionCamera(width, height, heightScale);
     }
 
+      updateExistingTerrain(heightmap, heightScale = 80, waterLevel = 0.15) {
+        if (!this.terrain || !this.terrain.geometry || !heightmap) return;
+
+        const geometry = this.terrain.geometry;
+        const pos = geometry.attributes.position;
+        const params = geometry.parameters || {};
+
+        const mapWidth  = typeof params.width === 'number'
+            ? params.width
+            : Math.round(Math.sqrt(heightmap.length));
+
+        const mapHeight = typeof params.height === 'number'
+            ? params.height
+            : Math.round(Math.sqrt(heightmap.length));
+
+        const segX = typeof params.widthSegments === 'number'
+            ? params.widthSegments
+            : Math.floor(Math.sqrt(pos.count)) - 1;
+
+        const segY = typeof params.heightSegments === 'number'
+            ? params.heightSegments
+            : Math.floor(pos.count / (segX + 1)) - 1;
+
+        let idx = 0;
+        for (let y = 0; y <= segY; y++) {
+            const hy = Math.round(y * (mapHeight - 1) / segY);
+            for (let x = 0; x <= segX; x++) {
+                const hx = Math.round(x * (mapWidth - 1) / segX);
+                const h01 = heightmap[hy * mapWidth + hx] || 0;
+                pos.setZ(idx, h01 * heightScale);
+                idx++;
+            }
+        }
+
+        pos.needsUpdate = true;
+
+        geometry.computeVertexNormals();
+        if (typeof this.smoothNormals === 'function') {
+            this.smoothNormals(geometry, 2);
+        }
+
+        if (typeof this.applyVertexColors === 'function') {
+            this.applyVertexColors(geometry, heightScale);
+            if (geometry.attributes.color) {
+                geometry.attributes.color.needsUpdate = true;
+            }
+        }
+
+        if (this.terrain.material) {
+            this.terrain.material.needsUpdate = true;
+        }
+
+        if (typeof this.updateWater === 'function') {
+            this.updateWater(mapWidth, mapHeight, heightScale, waterLevel);
+        }
+    }
     // ----------------------------------------------------------
     // Сглаживание нормалей
     // ----------------------------------------------------------

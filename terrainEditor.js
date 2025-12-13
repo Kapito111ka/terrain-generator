@@ -9,7 +9,8 @@ class TerrainEditor {
         this.currentTool = 'select';        // 'select' | 'raise' | 'lower' | 'smooth'
         this.isEditing = false;
         this.brushSize = 10;                // в единицах мира (плохой UX, но сохранил как раньше)
-        this.brushStrength = 0.3;           // 0..1
+        this.brushStrength = 0.3;     
+        this.brushEnabled = true;      // 0..1
         this.originalHeightmap = null;
 
         // Состояние мыши
@@ -37,6 +38,8 @@ class TerrainEditor {
         this.tryBind('toolRaise', 'click', () => this.setTool('raise'));
         this.tryBind('toolLower', 'click', () => this.setTool('lower'));
         this.tryBind('toolReset', 'click', () => this.resetTerrain());
+        this.tryBind('toggleBrush', 'click', () => this.toggleBrush());
+
 
         // Настройки кисти
         this.tryBind('brushSize', 'input', (e) => {
@@ -113,12 +116,28 @@ class TerrainEditor {
         if (el) el.classList.add('active');
 
         const cur = document.getElementById('currentTool');
-        if (cur) {
+         if (cur) {
             cur.textContent = `Инструмент: ${
                 tool === 'smooth' ? 'Сглаживание' :
                 tool === 'raise' ? 'Поднять' :
                 tool === 'lower' ? 'Опустить' : 'Выбор'
             }`;
+        }
+
+        // Enable/disable camera controls depending on tool and brushEnabled
+        try {
+            if (this.renderer && this.renderer.controls) {
+                const brushTools = ['raise','lower','smooth'];
+                if (brushTools.includes(tool) && this.brushEnabled) {
+                    // Кисть активна — блокируем OrbitControls
+                    this.renderer.controls.enabled = false;
+                } else {
+                    // Иначе — включаем управление камерой
+                    this.renderer.controls.enabled = true;
+                }
+            }
+        } catch (e) {
+            console.warn('Ошибка при переключении контролов:', e);
         }
     }
 
@@ -132,12 +151,11 @@ class TerrainEditor {
         if (this.originalHeightmap && this.originalHeightmap.length === this.generator.currentHeightmap.length) {
             this.generator.currentHeightmap.set(this.originalHeightmap);
         } else {
-            // Альтернатива — регенерация
-            if (typeof this.generator.generateTerrain === 'function') {
-                this.generator.generateTerrain();
-                return;
-            }
+            // Исходный террейн недоступен — не регенерируем автоматически.
+            alert('Исходный террейн недоступен: нет сохранённой оригинальной карты. Сброс невозможен.');
+            return;
         }
+
 
         // Обновляем меш
         if (this.renderer && this.renderer.updateExistingTerrain) {
@@ -147,7 +165,7 @@ class TerrainEditor {
         }
     }
 
-    onPointerDown(event) {
+   onPointerDown(event) {
         this.lastMouse = { x: event.clientX, y: event.clientY };
 
         // Сохраняем backup при начале редактирования
@@ -155,50 +173,165 @@ class TerrainEditor {
             this.originalHeightmap = new Float32Array(this.generator.currentHeightmap);
         }
 
-        // Немедленно применяем кисть в точке
-        const localPoint = this.getLocalPointFromEvent(event);
-        if (localPoint) {
-            this.modifyTerrainAtPoint(localPoint);
+        const hit = this.getHitFromScreen(event.clientX, event.clientY);
+        if (hit) {
+            this.modifyTerrainAtHit(hit);
         }
     }
 
     onPointerMove(event) {
-        this.lastMouse = { x: event.clientX, y: event.clientY };
+        // Интерполяция между последней и текущей позицией, чтобы мазок был непрерывным
+        const cur = { x: event.clientX, y: event.clientY };
+        const last = this.lastMouse || cur;
+        const dx = cur.x - last.x;
+        const dy = cur.y - last.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const step = 6; // каждый ~6 пикселей — можно подправить для чувствительности
+        const n = Math.max(1, Math.ceil(dist / step));
 
-        const localPoint = this.getLocalPointFromEvent(event);
-        if (localPoint) {
-            this.modifyTerrainAtPoint(localPoint);
+        for (let i = 0; i <= n; i++) {
+            const t = i / n;
+            const sx = Math.round(last.x + dx * t);
+            const sy = Math.round(last.y + dy * t);
+            const hit = this.getHitFromScreen(sx, sy);
+            if (hit) {
+                this.modifyTerrainAtHit(hit);
+            }
         }
+
+        this.lastMouse = cur;
     }
 
     onPointerUp() {
-        // По завершении редактирования можно провести легкое сглаживание/оптимизацию
-        // Здесь можно добавить пост-обработку (например, один проход blur по heightmap)
+        // Завершили — сбрасываем lastMouse
+        this.lastMouse = null;
     }
 
-    getLocalPointFromEvent(event) {
+    // Возвращает объект intersection (hit) или null — использует raycast и нормализованные координаты
+    getHitFromScreen(screenX, screenY) {
         if (!this.renderer || !this.renderer.renderer || !this.renderer.camera) return null;
         const rect = this.renderer.renderer.domElement.getBoundingClientRect();
 
         const mouse = new THREE.Vector2(
-            ((event.clientX - rect.left) / rect.width) * 2 - 1,
-            -((event.clientY - rect.top) / rect.height) * 2 + 1
+            ((screenX - rect.left) / rect.width) * 2 - 1,
+            -((screenY - rect.top) / rect.height) * 2 + 1
         );
 
-        const raycaster = new THREE.Raycaster();
-        raycaster.setFromCamera(mouse, this.renderer.camera);
+        // используем общий Raycaster (можно брать this.renderer.raycaster если доступен)
+        const ray = new THREE.Raycaster();
+        ray.setFromCamera(mouse, this.renderer.camera);
 
         if (!this.renderer.terrain) return null;
-        const intersects = raycaster.intersectObject(this.renderer.terrain);
+        const intersects = ray.intersectObject(this.renderer.terrain);
         if (intersects && intersects.length > 0) {
-            const hit = intersects[0];
-            // Преобразуем точку в локальные координаты террейна
+            return intersects[0]; // содержит .point, .uv, .face и т.д.
+        }
+        return null;
+    }
+
+    // Новая функция: модифицирует heightmap в области вокруг hit (использует hit.uv если есть)
+    modifyTerrainAtHit(hit) {
+        if (!hit || !this.generator || !this.generator.currentHeightmap || !this.renderer) return;
+
+        const heightmap = this.generator.currentHeightmap;
+        const mapSize = Math.sqrt(heightmap.length) | 0;
+        if (!Number.isInteger(mapSize)) return;
+
+        // Геометрические параметры плоскости (если нужны для нормализации)
+        const geom = this.renderer.terrain.geometry;
+        const geomParams = geom.parameters || {};
+        const planeWidth = (geomParams.width !== undefined) ? geomParams.width : mapSize;
+        const planeHeight = (geomParams.height !== undefined) ? geomParams.height : mapSize;
+
+        // Центр в UV-координатах (если hit.uv доступны — надёжнее), иначе вычислим из world->local
+        let centerX = 0, centerY = 0;
+        if (hit.uv) {
+            // uv.x: 0..1 left->right, uv.y: 0..1 bottom->top (three.js — зависит от geometry, но для Plane обычно так)
+            centerX = Math.floor(hit.uv.x * (mapSize - 1));
+            // инвертируем Y, чтобы 0..mapSize соответствовал top->bottom, как в main.js
+            centerY = Math.floor((1.0 - hit.uv.y) * (mapSize - 1));
+        } else {
+            // fallback: use hit.point -> worldToLocal -> map coords
             const local = hit.point.clone();
             this.renderer.terrain.worldToLocal(local);
-            return local;
+
+            const fx = (local.x + planeWidth / 2) * (mapSize - 1) / planeWidth;
+            const fy = (-local.z + planeHeight / 2) * (mapSize - 1) / planeHeight;
+            centerX = Math.floor(fx);
+            centerY = Math.floor(fy);
         }
 
-        return null;
+        // brush radius in map pixels
+        const brushRadiusMap = Math.max(2,Math.floor(this.brushSize));
+        const rSq = brushRadiusMap * brushRadiusMap;
+
+        const brushStrength = this.brushStrength; // 0..1
+        const tool = this.currentTool; // raise|lower|smooth
+
+        let modified = false;
+
+        // iterate in a tight bbox over heightmap (faster than touching all vertices)
+        const x0 = Math.max(0, centerX - brushRadiusMap);
+        const x1 = Math.min(mapSize - 1, centerX + brushRadiusMap);
+        const y0 = Math.max(0, centerY - brushRadiusMap);
+        const y1 = Math.min(mapSize - 1, centerY + brushRadiusMap);
+
+        for (let yy = y0; yy <= y1; yy++) {
+            for (let xx = x0; xx <= x1; xx++) {
+                const dx = xx - centerX;
+                const dy = yy - centerY;
+                const dsq = dx * dx + dy * dy;
+                if (dsq > rSq) continue;
+                const dist = Math.sqrt(dsq);
+                const influence = 1.0 - (dist / brushRadiusMap); // 1..0
+
+                const idx = yy * mapSize + xx;
+                const curH = heightmap[idx];
+                let targetH = curH;
+
+                if (tool === 'raise') {
+                    targetH = Math.min(1.0, curH + influence * brushStrength * 0.005);
+                } else if (tool === 'lower') {
+                    targetH = Math.max(0.0, curH - influence * brushStrength * 0.02);
+                } else if (tool === 'smooth') {
+                    const avg = this.getAverageHeight(heightmap, mapSize, xx, yy);
+                    targetH = curH + (avg - curH) * (influence * brushStrength * 0.6);
+                } else {
+                    continue;
+                }
+
+                const blend = influence * brushStrength;
+                const newH = curH * (1 - blend) + targetH * blend;
+
+                if (Math.abs(newH - curH) > 1e-6) {
+                    heightmap[idx] = newH;
+                    modified = true;
+                }
+            }
+        }
+
+        if (modified) {
+            // После изменения heightmap — обновляем меш (обновит вершины / нормали / цвета и материал)
+            const heightScale = parseInt(document.getElementById('heightScale')?.value || 50);
+            const waterLevel = parseInt(document.getElementById('waterLevel')?.value || 15) / 100;
+
+            if (this.renderer && typeof this.renderer.updateExistingTerrain === 'function') {
+                // updateExistingTerrain должен корректно применить currentHeightmap в меш
+                this.renderer.updateExistingTerrain(this.generator.currentHeightmap, heightScale, waterLevel);
+            } else {
+                // fallback: триггерим пересчёт позиции вершин вручную (медленно)
+                try {
+                    const geometry = this.renderer.terrain.geometry;
+                    const pos = geometry.attributes.position;
+                    const width = Math.sqrt(pos.count); // не идеально, но fallback
+                    // Если нет возможности быстрого апдейта — можно пометить needsUpdate
+                    pos.needsUpdate = true;
+                    geometry.computeVertexNormals();
+                } catch (e) {
+                    console.warn('modifyTerrainAtHit fallback update failed', e);
+                }
+            }
+        }
     }
 
     // Возвращает усреднённую высоту соседей в heightmap
@@ -213,145 +346,34 @@ class TerrainEditor {
         return cnt > 0 ? sum / cnt : 0;
     }
 
-    // ВАЖНО: основной метод редактирования — заменяет старую реализацию
-    modifyTerrainAtPoint(point) {
-        // point — THREE.Vector3 в локальных координатах террейна (terrain.local)
-        if (!this.renderer || !this.renderer.terrain || !this.generator || !this.generator.currentHeightmap) return;
 
-        const terrain = this.renderer.terrain;
-        const geometry = terrain.geometry;
-        const positionAttr = geometry.attributes.position;
-        const vertices = positionAttr.array;
-        const heightmap = this.generator.currentHeightmap;
-
-        // Параметры
-        const heightScale = parseInt(document.getElementById('heightScale')?.value || 50);
-        // brushSize — в единицах мира (плоскости), убедись, что UI соответствует
-        let brushRadius = this.brushSize;
-        const brushStrength = this.brushStrength; // 0..1
-
-        // Определяем размер heightmap (предполагаем квадратную)
-        const mapSize = Math.sqrt(heightmap.length);
-        if (!Number.isInteger(mapSize)) {
-            console.warn('Heightmap имеет неквадратный размер');
-            return;
-        }
-
-        // Определяем реальные размеры плоскости (если geometry.parameters присутствует)
-        // Если PlaneGeometry была создана как PlaneGeometry(width, height, segmentsX, segmentsY)
-        const geomParams = geometry.parameters || {};
-        const planeWidth = (geomParams.width !== undefined) ? geomParams.width : mapSize;
-        const planeHeight = (geomParams.height !== undefined) ? geomParams.height : mapSize;
-
-        // Иногда brushSize задают в относительных единицах (0..mapSize). Если brushRadius кажется слишком мал/больш,
-        // можно нормализовать: brushRadius = this.brushSize * (planeWidth / mapSize);
-        // Я оставляю как есть — brushSize в единицах мира.
-
-        // Функции перевода координат
-        const toMapX = (vx) => {
-            // vx: локальная x в диапазоне [-planeWidth/2, planeWidth/2]
-            const fx = (vx + planeWidth / 2) * (mapSize - 1) / planeWidth;
-            return Math.round(fx);
-        };
-        const toMapY = (vz) => {
-            // vz: локальная z в диапазоне [-planeHeight/2, planeHeight/2]. уменьшаем z, чтобы y-ось heightmap шла "вверх"
-            const fy = (-vz + planeHeight / 2) * (mapSize - 1) / planeHeight;
-            return Math.round(fy);
-        };
-
-        // локальная точка
-        const px = point.x;
-        const pz = point.z;
-
-        // оптимизация: предвычислить квадрат радиуса
-        const radiusSq = brushRadius * brushRadius;
-
-        let modified = false;
-
-        // Перебираем все вершины (можно оптимизировать — проверяя только bbox)
-        for (let vi = 0; vi < positionAttr.count; vi++) {
-            const baseIdx = vi * 3;
-            const vx = vertices[baseIdx];     // x
-            const vy = vertices[baseIdx + 1]; // y (в некоторых сетапах это высота)
-            const vz = vertices[baseIdx + 2]; // z (в данной конфигурации чаще - высота, но мы используем x/z для плоскости)
-
-            // Расстояние в плане XZ
-            const dx = vx - px;
-            const dz = vz - pz;
-            const distSq = dx * dx + dz * dz;
-
-            if (distSq <= radiusSq) {
-                const dist = Math.sqrt(distSq);
-                const influence = 1 - (dist / brushRadius); // от 1 (в центре) до 0 (на краю)
-
-                // Найдём соответствующий индекс в heightmap
-                const mapX = toMapX(vx);
-                const mapY = toMapY(vz);
-
-                if (mapX < 0 || mapX >= mapSize || mapY < 0 || mapY >= mapSize) continue;
-
-                const hmIndex = mapY * mapSize + mapX;
-                const currentH = heightmap[hmIndex]; // 0..1
-
-                let targetH = currentH;
-
-                if (this.currentTool === 'raise') {
-                    targetH = Math.min(1, currentH + influence * brushStrength * 0.02);
-                } else if (this.currentTool === 'lower') {
-                    targetH = Math.max(0, currentH - influence * brushStrength * 0.02);
-                } else if (this.currentTool === 'smooth') {
-                    // усредняем с соседями
-                    const avg = this.getAverageHeight(heightmap, mapSize, mapX, mapY);
-                    targetH = currentH + (avg - currentH) * (influence * brushStrength * 0.6);
-                } else {
-                    continue;
-                }
-
-                // плавная интерполяция между старым и новым значением
-                const blend = influence * brushStrength;
-                const newH = currentH * (1 - blend) + targetH * blend;
-
-                // сохраняем в heightmap
-                heightmap[hmIndex] = newH;
-
-                // обновляем вершину (высота = newH * heightScale)
-                const newVertexHeight = newH * heightScale;
-                // текущая вершина z хранит высоту в твоём проекте
-                const prevVertexHeight = vertices[baseIdx + 2];
-                vertices[baseIdx + 2] = prevVertexHeight * (1 - blend) + newVertexHeight * blend;
-
-                modified = true;
-            }
-        }
-
-        if (modified) {
-            // Пометка для WebGL буфера
-            positionAttr.needsUpdate = true;
-
-            // Пересчитаем нормали, чтобы убрать "шипы"
-            try {
-                geometry.computeVertexNormals();
-            } catch (e) {
-                console.warn('computeVertexNormals failed:', e);
-            }
-
-            // Обновим вершинные цвета, если они есть
-            if (geometry.attributes.color) {
-                geometry.attributes.color.needsUpdate = true;
-            }
-
-            // Обновляем материал флагами
-            if (terrain.material) terrain.material.needsUpdate = true;
-
-            // Если есть метод обновления в renderer — вызвать (для синхронизации и статистики)
-            if (this.renderer && typeof this.renderer.updateGeometryStats === 'function') {
-                this.renderer.updateGeometryStats(geometry);
-            }
-
-            // Визуально можно обновить статистику или прогресс
-            // (main.js может читать generator.currentHeightmap при необходимости)
-        }
+    toggleBrush() {
+    // Переключает состояние кисти (вкл/выкл). При отключении кисти камера снова активна.
+    this.brushEnabled = !this.brushEnabled;
+    const btn = document.getElementById('toggleBrush');
+    if (btn) {
+        // Подменяем текст для наглядности: "Откл. кисть" когда включена возможность рисовать
+        btn.textContent = this.brushEnabled ? 'Откл. кисть' : 'Вкл. кисть';
+        btn.classList.toggle('active', !this.brushEnabled);
     }
+    try {
+        if (this.renderer && this.renderer.controls) {
+            // Если кисть отключена — включаем управление камерой
+            if (!this.brushEnabled) {
+                this.renderer.controls.enabled = true;
+            } else {
+                // если кисть включена — блокируем, но только если выбран инструмент-кисть
+                const brushTools = ['raise','lower','smooth'];
+                if (brushTools.includes(this.currentTool)) {
+                    this.renderer.controls.enabled = false;
+                }
+            }
+        }
+    } catch (e) {
+        console.warn('toggleBrush error', e);
+    }
+}
+
 }
 
 if (typeof module !== 'undefined' && module.exports) {

@@ -51,6 +51,13 @@ class TerrainGenerator {
 
             // создаём UE-рендерер и передаём ему loader
             this.threeRenderer = new ThreeRenderer('threeContainer', this.textureLoader);
+            // Создаём TerrainEditor (инструменты кисти) и связываем с генератором
+            try {
+                this.terrainEditor = new TerrainEditor(this.threeRenderer, this);
+            } catch (e) {
+                console.warn('Не удалось создать TerrainEditor', e);
+            }
+
 
             // Стартуем генерацию террейна
             setTimeout(() => this.generateTerrain(), 800);
@@ -295,6 +302,16 @@ class TerrainGenerator {
             const size = Math.sqrt(this.currentHeightmap.length) | 0;
             const lod = this.getLODValue();
             this.threeRenderer.createTerrain(this.currentHeightmap, size, size, heightScale, lod);
+            try {
+                if (this.terrainEditor && this.currentHeightmap) {
+                    // Сохраняем копию оригинальной карты для возможности reset (undo to original)
+                    this.terrainEditor.originalHeightmap = new Float32Array(this.currentHeightmap);
+                }
+            } catch(e) {
+                console.warn('save originalHeightmap error', e);
+            }
+
+
             this.threeRenderer.updateWater(size, size, heightScale, waterLevel);
         }
 
