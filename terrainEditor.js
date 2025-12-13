@@ -12,6 +12,8 @@ class TerrainEditor {
         this.brushStrength = 0.3;     
         this.brushEnabled = true;      // 0..1
         this.baseHeightmap = null; 
+        this.undoStack = [];
+        this.redoStack = [];
 
         // Состояние мыши
         this.lastMouse = { x: 0, y: 0 };
@@ -39,6 +41,8 @@ class TerrainEditor {
         this.tryBind('toolLower', 'click', () => this.setTool('lower'));
         this.tryBind('toolReset', 'click', () => this.resetTerrain());
         this.tryBind('toggleBrush', 'click', () => this.toggleBrush());
+        this.tryBind('undoBtn', 'click', () => this.undo());
+        this.tryBind('redoBtn', 'click', () => this.redo());
 
 
         // Настройки кисти
@@ -165,9 +169,63 @@ class TerrainEditor {
         }
     }
 
+    undo() {
+    if (!this.undoStack.length) return;
+
+    if (!this.generator || !this.generator.currentHeightmap) return;
+
+    // текущее состояние идёт в redo
+    this.redoStack.push(
+        new Float32Array(this.generator.currentHeightmap)
+    );
+
+    // берём последнее из undo
+    const prev = this.undoStack.pop();
+    this.generator.currentHeightmap.set(prev);
+
+    const heightScale = parseInt(document.getElementById('heightScale')?.value || 50);
+    const waterLevel  = parseInt(document.getElementById('waterLevel')?.value || 15) / 100;
+
+    this.renderer.updateExistingTerrain(
+        this.generator.currentHeightmap,
+        heightScale,
+        waterLevel
+    );
+    }
+
+    redo() {
+        if (!this.redoStack.length) return;
+
+        if (!this.generator || !this.generator.currentHeightmap) return;
+
+        // текущее состояние идёт обратно в undo
+        this.undoStack.push(
+            new Float32Array(this.generator.currentHeightmap)
+        );
+
+        const next = this.redoStack.pop();
+        this.generator.currentHeightmap.set(next);
+
+        const heightScale = parseInt(document.getElementById('heightScale')?.value || 50);
+        const waterLevel  = parseInt(document.getElementById('waterLevel')?.value || 15) / 100;
+
+        this.renderer.updateExistingTerrain(
+            this.generator.currentHeightmap,
+            heightScale,
+            waterLevel
+        );
+    }
+
    onPointerDown(event) {
         this.lastMouse = { x: event.clientX, y: event.clientY };
 
+        if (this.generator && this.generator.currentHeightmap) {
+        this.undoStack.push(
+            new Float32Array(this.generator.currentHeightmap)
+        );
+        // при новом действии redo больше не имеет смысла
+        this.redoStack.length = 0;
+    }
         // Сохраняем backup при начале редактирования
         if (this.generator && this.generator.currentHeightmap) {
             this.originalHeightmap = new Float32Array(this.generator.currentHeightmap);
