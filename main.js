@@ -1,6 +1,3 @@
-// main.js
-// TerrainGenerator: генерация heightmap, сглаживание, эрозия и передача в ThreeRenderer
-
 class TerrainGenerator {
     constructor() {
         this.perlin = new PerlinNoise();
@@ -8,7 +5,7 @@ class TerrainGenerator {
         this.erosion = new HydraulicErosion();
 
         this.threeRenderer = null;
-        this.currentHeightmap = null;
+       this.currentHeightmap = null;
         this.baseHeightmap = null;
 
         this.isGenerating = false;
@@ -22,8 +19,6 @@ class TerrainGenerator {
             this.initialize();
         }
     }
-
-    // ---------------- ИНИЦИАЛИЗАЦИЯ ----------------
 
     initialize() {
         this.initializeEventListeners();
@@ -50,9 +45,9 @@ class TerrainGenerator {
             await this.textureLoader.loadAllTextures();
             console.log('PBR текстуры загружены!');
 
-            // создаём UE-рендерер и передаём ему loader
+            // создаём UE-рендерер
             this.threeRenderer = new ThreeRenderer('threeContainer', this.textureLoader);
-            // Создаём TerrainEditor (инструменты кисти) и связываем с генератором
+            // Создаём TerrainEditor и связываем с генератором
             try {
                 this.terrainEditor = new TerrainEditor(this.threeRenderer, this);
             } catch (e) {
@@ -114,20 +109,20 @@ class TerrainGenerator {
         console.log('Настройки качества применены:', quality);
     }
 
-    toggleAntiAliasing(enabled) {
-        if (!this.threeRenderer) return;
-        console.log('Переключение антиалиасинга:', enabled ? 'включено' : 'выключено');
-        // Реальное переключение требует пересоздания renderer — пока просто регенерируем террейн
-        this.generateTerrain();
-    }
+    //toggleAntiAliasing(enabled) {
+    //    if (!this.threeRenderer) return;
+    //    console.log('Переключение антиалиасинга:', enabled ? 'включено' : 'выключено');
+    //    // Реальное переключение требует пересоздания renderer — пока просто регенерируем террейн
+    //    this.generateTerrain();
+    //}
 
     updateAlgorithmInfo(algorithm) {
         const infoMap = {
             perlin: 'Perlin Noise',
             diamond: 'Diamond-Square',
-            hybrid: 'Гибридный'
+            hybrid: 'Hybrydowy'
         };
-        this.updateElementText('algorithmInfo', `Алгоритм: ${infoMap[algorithm] || algorithm}`);
+        this.updateElementText('algorithmInfo', `Algorytm: ${infoMap[algorithm] || algorithm}`);
     }
 
     addEventListenerSafe(elementId, event, handler) {
@@ -342,7 +337,7 @@ class TerrainGenerator {
             const erosionIterations = this.getNumberValue('erosionIterations', 4000);
             const smoothing  = this.getNumberValue('smoothing', 45);
 
-            console.log('Генерация террейна с улучшенными алгоритмами:', {
+            console.log('Generowanie terenu z ulepszonymi algorytmami.:', {
                 algorithm,
                 seed,
                 size,
@@ -470,9 +465,9 @@ class TerrainGenerator {
                 this.updateProgress(100, 'Готово!');
             }
 
-            console.log('Террейн сгенерирован успешно с улучшенными алгоритмами');
+            console.log('Teren został pomyślnie wygenerowany.');
         } catch (error) {
-            console.error('Ошибка генерации террейна:', error);
+            console.error('Błąd generowania terenu:', error);
         } finally {
             this.isGenerating = false;
         }
@@ -483,20 +478,20 @@ class TerrainGenerator {
     generatePerlinHeightmap(size, scale, octaves, roughness) {
         const persistence = 0.45;        // чуть меньше — плавнее
         const lacunarity  = 1.9;         // немного меньше частота
-        console.log('Генерация шума с улучшенными параметрами:', { scale, octaves, persistence, lacunarity });
+        console.log('Generowanie szumu z ulepszonymi parametrami.:', { scale, octaves, persistence, lacunarity });
         return this.perlin.generateHighResolutionHeightmap(
             size, size, scale, octaves, persistence, lacunarity
         );
     }
 
     generateDiamondSquareHeightmap(size, dsRoughness) {
-        console.log('Diamond-Square: генерация', size + 'x' + size, ', шероховатость:', dsRoughness);
+        console.log('Diamond-Square: generacja', size + 'x' + size, ', Chropowatość:', dsRoughness);
         return this.diamondSquare.generate(size, dsRoughness);
     }
 
     // Гибрид: Perlin + Ridged Perlin + Diamond-Square
     generateHybridHeightmap(size, scale, octaves, roughness, dsRoughness, hybridWeight) {
-        console.log('Генерация гибридного ландшафта (ridged)...');
+        console.log('Generowanie hybrydowego krajobrazu (ridged)...');
 
         const perlinMap  = this.generatePerlinHeightmap(size, scale, octaves, roughness);
         const diamondMap = this.generateDiamondSquareHeightmap(size, dsRoughness);
@@ -540,7 +535,7 @@ class TerrainGenerator {
     // ---------------- КОРРЕКЦИИ / СГЛАЖИВАНИЕ ----------------
 
     applyFinalWaveCorrection(heightmap, size, strength = 0.12) {
-        console.log('Применение коррекции волн...');
+        console.log('Zastosowanie korekcji fal....');
         const n = size;
         const out = new Float32Array(heightmap.length);
         let fixes = 0;
@@ -568,10 +563,10 @@ class TerrainGenerator {
             }
         }
 
-        console.log('Коррекция волн: применено', fixes, 'исправлений');
+        console.log('Korekcja fal: zastosowano', fixes, 'popraw');
         return out;
     }
-        // ---------------- ФОРМИРОВАНИЕ ГОРНЫХ МАССИВОВ ----------------
+        // ФОРМИРОВАНИЕ ГОРНЫХ МАССИВОВ
     // Склеивает кучу острых пиков в более цельные горы / хребты
     shapeMountains(heightmap, size, threshold = 0.6, merge = 0.55) {
         const out = new Float32Array(heightmap.length);
@@ -860,7 +855,7 @@ class TerrainGenerator {
 
         if (this.threeRenderer && this.threeRenderer.terrain) {
             const vertexCount = this.threeRenderer.terrain.geometry.attributes.position.count;
-            this.updateElementText('vertexCount', `Вершины: ${vertexCount.toLocaleString()}`);
+            this.updateElementText('vertexCount', `Wierzchołki: ${vertexCount.toLocaleString()}`);
         }
     }
 
@@ -935,22 +930,25 @@ class TerrainGenerator {
         // Буфер под 16-битные значения: 2 байта на каждый пиксель
         const buffer = new ArrayBuffer(size * size * 2);
         const view = new DataView(buffer);
+        
+        for (let y = 0; y < size; y++) {
+            for (let x = 0; x < size; x++) {
 
-        for (let i = 0; i < total; i++) {
-            let h = this.currentHeightmap[i];
+                // 🔥 ВАЖНО: инверсия по Y
+                const srcIndex = (size - 1 - y) * size + x;
+                const dstIndex = (y * size + x) * 2;
 
-            // защита от мусора
-            if (!Number.isFinite(h)) h = 0;
-            // ограничиваем 0..1
-            h = Math.min(1, Math.max(0, h));
+                let h = this.currentHeightmap[srcIndex];
 
-            // 16-bit: 0..65535
-            const value = Math.round(h * 65535);
+                if (!Number.isFinite(h)) h = 0;
+                h = Math.min(1, Math.max(0, h));
 
-            // записываем little-endian (Windows)
-            view.setUint16(i * 2, value, true);
-        }
+                const value = Math.round(h * 65535);
+                view.setUint16(dstIndex, value, true); // little-endian
+            }
+       }
 
+        
         const blob = new Blob([buffer], { type: 'application/octet-stream' });
         const url = URL.createObjectURL(blob);
 
@@ -1184,12 +1182,21 @@ class TerrainGenerator {
         const buffer = new ArrayBuffer(size * size * 2);
         const view = new DataView(buffer);
 
-        for (let i = 0; i < total; i++) {
-            let h = this.currentHeightmap[i];
-            if (!Number.isFinite(h)) h = 0;
-            h = Math.min(1, Math.max(0, h));
-            const value = Math.round(h * 65535);
-            view.setUint16(i * 2, value, true); // little-endian
+        for (let y = 0; y < size; y++) {
+            for (let x = 0; x < size; x++) {
+
+                // 🔥 ВАЖНО: инверсия по Y
+                const srcIndex = (size - 1 - y) * size + x;
+                const dstIndex = (y * size + x) * 2;
+
+                let h = this.currentHeightmap[srcIndex];
+
+                if (!Number.isFinite(h)) h = 0;
+                h = Math.min(1, Math.max(0, h));
+
+                const value = Math.round(h * 65535);
+                view.setUint16(dstIndex, value, true); // little-endian
+            }
         }
 
         // кладём RAW внутрь папки heightmap/
@@ -1364,8 +1371,6 @@ function laplacianSmooth(heightmap, size, iterations = 3, alpha = 0.5) {
     }
     return heightmap;
 }
-
-// ---------------- ЗАПУСК ПРИ ЗАГРУЗКЕ ----------------
 
 document.addEventListener('DOMContentLoaded', () => {
     window.terrainApp = new TerrainGenerator();

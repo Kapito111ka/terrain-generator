@@ -1,8 +1,3 @@
-/* =========================================================
-   Terrain Generator – Integration Tests
-   Adapted to real project architecture
-   ========================================================= */
-
 const TestRunner = {
     passed: 0,
     failed: 0,
@@ -10,10 +5,10 @@ const TestRunner = {
     test(name, fn) {
         try {
             fn();
-            console.log(`✅ ${name}`);
+            console.log(`YY ${name}`);
             this.passed++;
         } catch (e) {
-            console.error(`❌ ${name}`);
+            console.error(`XX ${name}`);
             console.error(e.message || e);
             this.failed++;
         }
@@ -30,16 +25,10 @@ const TestRunner = {
     },
 
     summary() {
-        console.log("================================");
         console.log(`Tests passed: ${this.passed}`);
         console.log(`Tests failed: ${this.failed}`);
-        console.log("================================");
     }
 };
-
-/* =========================================================
-   Helpers
-   ========================================================= */
 
 function getApp() {
     return window.terrainApp;
@@ -54,66 +43,40 @@ function clone(arr) {
     return new Float32Array(arr);
 }
 
-/* =========================================================
-   TESTS
-   ========================================================= */
-
 function runTests() {
     const app = getApp();
 
-    /* ---------- APPLICATION ---------- */
-
     TestRunner.test("Application object exists", () => {
-        TestRunner.assert(app, "window.terrainApp not found");
+        TestRunner.assert(app, "window.terrainApp not found");  //Czy główny obiekt aplikacji (terrainApp) istnieje w window {main 1371}
     });
 
     TestRunner.test("ThreeRenderer exists", () => {
-        TestRunner.assert(app.threeRenderer, "threeRenderer missing");
+        TestRunner.assert(app.threeRenderer, "threeRenderer missing");//Czy moduł renderujący 3D (Three.js) został poprawnie utworzony
     });
 
-    /* ---------- HEIGHTMAP ---------- */
-
     TestRunner.test("Heightmap exists after generation", () => {
-        TestRunner.assert(app.currentHeightmap, "currentHeightmap missing");
+        TestRunner.assert(app.currentHeightmap, "currentHeightmap missing"); //Czy mapa wysokości (heightmap) została wygenerowana i istnieje w aplikacji
     });
 
     TestRunner.test("Heightmap is square", () => {
-        TestRunner.assert(
-            isSquareArray(app.currentHeightmap),
-            "Heightmap is not square"
-        );
+        TestRunner.assert(isSquareArray(app.currentHeightmap),"Heightmap is not square");//Czy mapa wysokości jest kwadratowa (szerokość i wysokość są równe)
     });
 
     TestRunner.test("Heightmap values are normalized (0..1)", () => {
         const hm = app.currentHeightmap;
         for (let i = 0; i < hm.length; i++) {
-            TestRunner.assertInRange(
-                hm[i],
-                0,
-                1,
-                `Invalid heightmap value at ${i}: ${hm[i]}`
-            );
+            TestRunner.assertInRange(hm[i],0,1,`Invalid heightmap value at ${i}: ${hm[i]}`);//Czy wszystkie wartości wysokości są poprawnie znormalizowane
         }
     });
 
-    /* ---------- GENERATION PIPELINE ---------- */
-
     TestRunner.test("Terrain regeneration produces valid heightmap", () => {
-        app.generateTerrain();
+        app.generateTerrain();//Czy ponowna generacja:działa,tworzy poprawną heightmapę
         TestRunner.assert(app.currentHeightmap, "Heightmap missing after regen");
-        TestRunner.assert(
-            isSquareArray(app.currentHeightmap),
-            "Regenerated heightmap not square"
-        );
+        TestRunner.assert(isSquareArray(app.currentHeightmap),"Regenerated heightmap not square");
     });
 
-    /* ---------- THREE.JS ---------- */
-
     TestRunner.test("Terrain mesh exists in scene", () => {
-        TestRunner.assert(
-            app.threeRenderer.terrain,
-            "Terrain mesh missing"
-        );
+        TestRunner.assert(app.threeRenderer.terrain,"Terrain mesh missing");//Czy heightmap została faktycznie zamieniona na obiekt 3D
     });
 
     TestRunner.test("updateExistingTerrain updates geometry without recreating mesh", () => {
@@ -127,19 +90,17 @@ function runTests() {
         );
 
         const meshAfter = renderer.terrain;
-        TestRunner.assert(
+        TestRunner.assert( //Czy edycja terenu:aktualizuje geometrię, nie tworzy nowego obiektu
             meshBefore === meshAfter,
             "Terrain mesh was recreated instead of updated"
         );
     });
 
-    /* ---------- EDITING ---------- */
-
     TestRunner.test("Local heightmap modification affects terrain", () => {
         const hm = app.currentHeightmap;
         const before = hm[0];
 
-        hm[0] = Math.min(1, before + 0.05);
+        hm[0] = Math.min(1, before + 0.05);   //Czy zmiana danych:naprawdę wpływa na teren, jest widoczna w 3D
 
         app.threeRenderer.updateExistingTerrain(
             hm,
@@ -153,36 +114,30 @@ function runTests() {
         );
     });
 
-    /* ---------- MATERIAL / SHADER API ---------- */
-
-    TestRunner.test("Terrain material exists", () => {
+    TestRunner.test("Terrain material exists", () => {  //Czy teren ma przypisany materiał PBR
         const mat = app.threeRenderer.terrain.material;
         TestRunner.assert(mat, "Terrain material missing");
     });
 
-    TestRunner.test("Color intensity API exists", () => {
+    TestRunner.test("Color intensity API exists", () => {   //Czy istnieje publiczny interfejs do kontroli koloru
         TestRunner.assert(
             typeof app.threeRenderer.setColorIntensity === "function",
             "setColorIntensity API missing"
         );
     });
 
-    TestRunner.test("Calling setColorIntensity does not crash", () => {
+    TestRunner.test("Calling setColorIntensity does not crash", () => { //Czy wywołanie:nie powoduje błędów, jest bezpieczne w runtime
         app.threeRenderer.setColorIntensity(120);
     });
 
-    /* ---------- WATER ---------- */
-
-    TestRunner.test("Water system initialized", () => {
+    TestRunner.test("Water system initialized", () => {   //Czy system wody został utworzony
         TestRunner.assert(
             app.threeRenderer.water || app.threeRenderer.waterMaterial,
             "Water system not initialized"
         );
     });
-
-    /* ---------- EXPORT ---------- */
-
-    TestRunner.test("Exported heightmap matches internal heightmap", () => {
+ 
+    TestRunner.test("Exported heightmap matches internal heightmap", () => {   //Czy dane eksportowane: odpowiadają danym wewnętrznym
         const exported = app.getExportHeightmap
             ? app.getExportHeightmap()
             : app.currentHeightmap;
@@ -196,21 +151,11 @@ function runTests() {
     TestRunner.test("Exported data valid for Unity (0..1)", () => {
         const hm = app.currentHeightmap;
         for (let i = 0; i < hm.length; i++) {
-            TestRunner.assertInRange(
-                hm[i],
-                0,
-                1,
-                `Invalid export value at ${i}`
-            );
-        }
+            TestRunner.assertInRange(hm[i],0,1,`Invalid export value at ${i}`);}
     });
 
     TestRunner.summary();
 }
-
-/* =========================================================
-   WAIT FOR APP READY
-   ========================================================= */
 
 function waitForReady(cb) {
     const check = () => {
@@ -230,6 +175,6 @@ function waitForReady(cb) {
 }
 
 waitForReady(() => {
-    console.log("🧪 Terrain ready — running tests");
+    console.log("Terrain ready — running tests");
     runTests();
 });
