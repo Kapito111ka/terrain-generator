@@ -9,6 +9,7 @@ class TerrainGenerator {
 
         this.threeRenderer = null;
         this.currentHeightmap = null;
+        this.baseHeightmap = null;
 
         this.isGenerating = false;
         this.updateTimeout = null;
@@ -301,7 +302,7 @@ class TerrainGenerator {
         if (this.threeRenderer && this.threeRenderer.isInitialized) {
             const size = Math.sqrt(this.currentHeightmap.length) | 0;
             const lod = this.getLODValue();
-            this.threeRenderer.createTerrain(this.currentHeightmap, size, size, heightScale, lod);
+            this.threeRenderer.updateExistingTerrain(this.currentHeightmap,heightScale,waterLevel);
             this.threeRenderer.updateWater(size, size, heightScale, waterLevel);
         }
 
@@ -442,10 +443,6 @@ class TerrainGenerator {
 
             this.normalizeHeightmap(heightmap);
             heightmap = this.sanitizeHeightmap(heightmap);
-            this.currentHeightmap = heightmap;
-            if (this.terrainEditor) {
-                this.terrainEditor.baseHeightmap = new Float32Array(heightmap);
-            }
 
             if (showProgress) this.updateProgress(90, 'Создание 3D-мешка...');
 
@@ -458,7 +455,11 @@ class TerrainGenerator {
                 this.threeRenderer.updateWater(size, size, heightScale, waterLevel);
             }
 
-            this.currentHeightmap = heightmap;
+            // сохраняем ОРИГИНАЛ
+            this.baseHeightmap = new Float32Array(heightmap);
+
+            // рабочая копия — с ней работают кисти, эрозия, undo
+            this.currentHeightmap = new Float32Array(heightmap);
             this.updateStats(heightmap, startTime);
             this.updateAlgorithmInfo(algorithm);
 

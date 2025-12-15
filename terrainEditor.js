@@ -146,28 +146,29 @@ class TerrainEditor {
     }
 
     resetTerrain() {
-        if (!this.generator || !this.generator.currentHeightmap) return;
+        if (!this.generator || !this.generator.baseHeightmap) return;
 
-        // Запрашиваем подтверждение
-        if (!confirm('Сбросить террейн к исходному состоянию?')) return;
+        if (!confirm('Сбросить все изменения?')) return;
 
-        // Если у нас есть оригинал, можно вернуть его
-        if (this.originalHeightmap && this.originalHeightmap.length === this.generator.currentHeightmap.length) {
-            this.generator.currentHeightmap.set(this.originalHeightmap);
-        } else {
-            // Исходный террейн недоступен — не регенерируем автоматически.
-            alert('Исходный террейн недоступен: нет сохранённой оригинальной карты. Сброс невозможен.');
-            return;
-        }
+        // восстановление из базы
+        this.generator.currentHeightmap.set(
+            this.generator.baseHeightmap
+        );
 
+        // чистим историю
+        this.undoStack.length = 0;
+        this.redoStack.length = 0;
 
-        // Обновляем меш
-        if (this.renderer && this.renderer.updateExistingTerrain) {
-            const heightScale = parseInt(document.getElementById('heightScale')?.value || 50);
-            const waterLevel = parseInt(document.getElementById('waterLevel')?.value || 15) / 100;
-            this.renderer.updateExistingTerrain(this.generator.currentHeightmap, heightScale, waterLevel);
-        }
+        const heightScale = parseInt(document.getElementById('heightScale')?.value || 50);
+        const waterLevel  = parseInt(document.getElementById('waterLevel')?.value || 15) / 100;
+
+        this.renderer.updateExistingTerrain(
+            this.generator.currentHeightmap,
+            heightScale,
+            waterLevel
+        );
     }
+
 
     undo() {
     if (!this.undoStack.length) return;
@@ -225,10 +226,6 @@ class TerrainEditor {
         );
         // при новом действии redo больше не имеет смысла
         this.redoStack.length = 0;
-    }
-        // Сохраняем backup при начале редактирования
-        if (this.generator && this.generator.currentHeightmap) {
-            this.originalHeightmap = new Float32Array(this.generator.currentHeightmap);
         }
 
         const hit = this.getHitFromScreen(event.clientX, event.clientY);
