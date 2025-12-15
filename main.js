@@ -298,6 +298,9 @@ class TerrainGenerator {
 
         const heightScale = this.getNumberValue('heightScale', 50);
         const waterLevel = this.getNumberValue('waterLevel', 15) / 100;
+        const colorIntensity = this.getNumberValue('colorIntensity', 100);
+        this.threeRenderer.setColorIntensity(colorIntensity);
+
 
         if (this.threeRenderer && this.threeRenderer.isInitialized) {
             const size = Math.sqrt(this.currentHeightmap.length) | 0;

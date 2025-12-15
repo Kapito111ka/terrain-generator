@@ -415,6 +415,19 @@ class ThreeRenderer {
     // Create UE-style multi-material PBR shader
     // ----------------------------------------------------------
 
+    setColorIntensity(value) {
+    if (!this.terrain ||
+        !this.terrain.material ||
+        !this.terrain.material.userData ||
+        !this.terrain.material.userData.shader) return;
+
+    const shader = this.terrain.material.userData.shader;
+
+    // slider 50–200 → 0.5–2.0
+    shader.uniforms.colorIntensity.value = value / 100;
+}
+
+
     createUETerrainMaterial(geometry, heightScale, terrainSize) {
         const material = new THREE.MeshStandardMaterial({
             vertexColors: true,
@@ -474,6 +487,7 @@ class ThreeRenderer {
             shader.uniforms.heightScale = { value: heightScale };
             shader.uniforms.parallaxScale = { value: 0.03 };
             shader.uniforms.waterLevel01  = { value: this.waterLevel01 };
+            shader.uniforms.colorIntensity = { value: 1.0 };
 
             // ----------------------------------------------------
             // Добавляем мировые позиции и нормали
@@ -518,6 +532,7 @@ class ThreeRenderer {
                 uniform float heightScale;
                 uniform float parallaxScale;
                 uniform float waterLevel01; 
+                uniform float colorIntensity;
 
                 // текстуры
                 uniform sampler2D grassColorMap;
@@ -685,6 +700,8 @@ class ThreeRenderer {
                 // sRGB → linear
                 blended = pow(blended, vec3(2.2));
 
+                blended *= colorIntensity;
+
                 diffuseColor.rgb *= blended;
                 `
             );
@@ -718,11 +735,9 @@ class ThreeRenderer {
         if (!this.waterMaterial) {
             // uniforms для шейдера воды
             const uniforms = {
-                uTime:      { value: 0.0 },
-                uDeepColor: { value: new THREE.Color(0x04101f) },  // глубокая вода
-                uShallowColor: { value: new THREE.Color(0x1b5c8a) }, // мелко
-                uFoamColor: { value: new THREE.Color(0xffffff) },
-                uOpacity:   { value: 0.8 }
+                uDeepColor: { value: new THREE.Color(0x04101f) },
+                uShallowColor: { value: new THREE.Color(0x1b5c8a) },
+                uOpacity:   { value: 0.75 }
             };
 
             this.waterMaterial = new THREE.ShaderMaterial({
@@ -742,10 +757,8 @@ class ThreeRenderer {
                     }
                 `,
                 fragmentShader: `
-                    uniform float uTime;
                     uniform vec3 uDeepColor;
                     uniform vec3 uShallowColor;
-                    uniform vec3 uFoamColor;
                     uniform float uOpacity;
 
                     varying vec2 vUv;
@@ -755,30 +768,17 @@ class ThreeRenderer {
                         // направление камеры
                         vec3 viewDir = normalize(cameraPosition - vWorldPos);
 
-                        // фейковые волны
-                        float wave1 = sin(vUv.x * 40.0 + uTime * 0.7) * 0.04;
-                        float wave2 = sin(vUv.y * 30.0 - uTime * 0.5) * 0.03;
-                        float wave3 = sin((vUv.x + vUv.y) * 25.0 + uTime * 0.9) * 0.02;
-                        float waves = wave1 + wave2 + wave3;
-
-                        // базовая глубина (можно потом завязать на real depth)
-                        float depthFactor = 0.6 + waves; // 0..1
-                        depthFactor = clamp(depthFactor, 0.0, 1.0);
-
+                        // statyczny gradient – spokojna woda
+                        float depthFactor = clamp(vUv.y * 0.5 + 0.25, 0.0, 1.0);
                         vec3 waterColor = mix(uDeepColor, uShallowColor, depthFactor);
 
-                        // френель: сильнее по краям
-                        float fresnel = pow(1.0 - max(dot(viewDir, vec3(0.0, 1.0, 0.0)), 0.0), 3.0);
+                        // bardzo delikatny fresnel (opcjonalnie)
+                        float fresnel = pow(1.0 - max(dot(viewDir, vec3(0.0, 1.0, 0.0)), 0.0), 2.0);
+                        waterColor += fresnel * 0.05;
 
-                        // пенка на пиках волн
-                        float foam = smoothstep(0.045, 0.08, abs(waves));
-                        vec3 foamColor = uFoamColor * foam * 0.6;
-
-                        vec3 finalColor = waterColor + foamColor;
-                        finalColor += fresnel * 0.15; // чуть высветляем края
-
-                        gl_FragColor = vec4(finalColor, uOpacity);
+                        gl_FragColor = vec4(waterColor, uOpacity);
                     }
+
                 `
             });
 
@@ -807,10 +807,6 @@ class ThreeRenderer {
         requestAnimationFrame(() => this.animate());
 
         const dt = this.clock.getDelta();
-        if (this.waterMaterial && this.waterMaterial.uniforms && this.waterMaterial.uniforms.uTime) {
-            this.waterMaterial.uniforms.uTime.value += dt;
-        }
-
         if (this.controls) {
             this.controls.update();
         }
