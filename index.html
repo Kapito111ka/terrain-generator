@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="ru">
+<html lang="pl">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>3D Генератор ландшафта</title>
+  <title>Generator terenu 3D</title>
   <link rel="stylesheet" href="style.css">
   <!-- Three.js (CDN) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -15,31 +15,31 @@
   <div class="app">
     <header class="header">
       <div class="header-inner">
-        <h1 class="title">3D Генератор ландшафта</h1>
-        <p class="subtitle">Diamond-Square · Perlin · Эрозия · Редактор</p>
+        <h1 class="title">Generator terenu 3D</h1>
+        <p class="subtitle">Diamond-Square · Perlin · Erozja · Edytor</p>
       </div>
       <div class="header-stats">
-        <div id="algorithmInfo" class="stat">Алгоритм: —</div>
-        <div id="vertexCount" class="stat">Вершины: —</div>
-        <div id="polyCount" class="stat">Полигоны: —</div>
+        <div id="algorithmInfo" class="stat">Algorytm: —</div>
+        <div id="vertexCount" class="stat">Wierzchołki: —</div>
+        <div id="polyCount" class="stat">Poligony: —</div>
       </div>
     </header>
 
     <main class="main">
-      <aside class="sidebar" aria-label="Панель управления">
+      <aside class="sidebar" aria-label="Panel sterowania">
         <section class="panel">
-          <h2 class="panel-title">Генерация</h2>
+          <h2 class="panel-title">Generowanie</h2>
 
           <label class="field">
             <span class="label">Seed</span>
             <div class="field-row">
               <input id="seed" type="number" value="12345" class="input-small" />
-              <button id="randomSeed" class="btn">Новый seed</button>
+              <button id="randomSeed" class="btn">Nowy seed</button>
             </div>
           </label>
 
           <label class="field">
-            <span class="label">Размер сетки</span>
+            <span class="label">Rozmiar siatki</span>
             <select id="size" class="select">
               <option value="65">65 × 65</option>
               <option value="129">129 × 129</option>
@@ -49,55 +49,54 @@
           </label>
 
           <label class="field">
-            <span class="label">Алгоритм</span>
+            <span class="label">Algorytm</span>
             <select id="algorithm" class="select">
               <option value="perlin">Perlin</option>
               <option value="diamond">Diamond-Square</option>
-              <option value="hybrid" selected>Гибрид</option>
+              <option value="hybrid" selected>Hybrydowy</option>
             </select>
           </label>
 
-          <button id="generate" class="btn primary full">Сгенерировать</button>
+          <button id="generate" class="btn primary full">Generuj</button>
         </section>
 
         <section class="panel">
-          <h2 class="panel-title">Параметры шума</h2>
+          <h2 class="panel-title">Parametry szumu</h2>
 
           <label class="field">
-            <span class="label">Scale</span>
+            <span class="label">Skala</span>
             <input id="scale" type="range" min="10" max="500" value="180" step="1">
             <input id="scaleValue" class="value input-number" type="number"
                   min="10" max="500" step="1" value="180">
           </label>
 
           <label class="field">
-            <span class="label">Octaves</span>
+            <span class="label">Oktawy</span>
             <input id="octaves" type="range" min="1" max="10" value="4" step="1">
             <input id="octavesValue" class="value input-number" type="number"
                   min="1" max="10" step="1" value="4">
           </label>
 
           <label class="field">
-            <span class="label">Roughness</span>
+            <span class="label">Chropowatość</span>
             <input id="roughness" type="range" min="1" max="100" value="35" step="1">
             <input id="roughnessValue" class="value input-number" type="number"
                   min="1" max="100" step="1" value="35">
           </label>
         </section>
 
-
         <section class="panel">
           <h2 class="panel-title">Diamond-Square</h2>
 
           <label class="field">
-            <span class="label">DS Roughness</span>
+            <span class="label">Chropowatość DS</span>
             <input id="dsRoughness" type="range" min="1" max="100" value="40" step="1">
             <input id="dsRoughnessValue" class="value input-number" type="number"
                   min="1" max="100" step="1" value="40">
           </label>
 
           <label class="field">
-            <span class="label">Hybrid Weight</span>
+            <span class="label">Waga hybrydy</span>
             <input id="hybridWeight" type="range" min="0" max="100" value="35" step="1">
             <input id="hybridWeightValue" class="value input-number" type="number"
                   min="0" max="100" step="1" value="35">
@@ -105,43 +104,42 @@
         </section>
 
         <section class="panel">
-          <h2 class="panel-title">Рельеф</h2>
+          <h2 class="panel-title">Ukształtowanie terenu</h2>
 
           <label class="field">
-            <span class="label">Height scale</span>
+            <span class="label">Skala wysokości</span>
             <input id="heightScale" type="range" min="10" max="200" value="35" step="1">
             <input id="heightScaleValue" class="value input-number" type="number"
                   min="10" max="200" step="1" value="35">
           </label>
 
           <label class="field">
-            <span class="label">Erosion iterations</span>
+            <span class="label">Iteracje erozji</span>
             <input id="erosionIterations" type="range" min="0" max="10000" value="4000" step="100">
             <input id="erosionValue" class="value input-number" type="number"
                   min="0" max="10000" step="100" value="4000">
           </label>
 
           <label class="field">
-            <span class="label">Smoothing</span>
+            <span class="label">Wygładzanie</span>
             <input id="smoothing" type="range" min="0" max="100" value="45" step="1">
             <input id="smoothingValue" class="value input-number" type="number"
                   min="0" max="100" step="1" value="45">
           </label>
         </section>
 
-
         <section class="panel">
-          <h2 class="panel-title">Внешний вид</h2>
+          <h2 class="panel-title">Wygląd</h2>
 
           <label class="field">
-            <span class="label">Water level</span>
+            <span class="label">Poziom wody</span>
             <input id="waterLevel" type="range" min="0" max="100" value="20" step="1">
             <input id="waterLevelValue" class="value input-number" type="number"
                   min="0" max="100" step="1" value="20">
           </label>
 
           <label class="field">
-            <span class="label">Color intensity</span>
+            <span class="label">Intensywność koloru</span>
             <input id="colorIntensity" type="range" min="50" max="200" value="110" step="1">
             <input id="colorIntensityValue" class="value input-number" type="number"
                   min="50" max="200" step="1" value="110">
@@ -149,47 +147,49 @@
 
         </section>
 
-
         <section class="panel">
-          <h2 class="panel-title">Инструменты</h2>
+          <h2 class="panel-title">Narzędzia</h2>
           <div class="tools">
-            <button id="screenshot" class="btn">Скриншот</button>
-            <button id="exportFullUnity">Экспорт в Unity (полный)</button>
+            <button id="screenshot" class="btn">Zrzut ekranu</button>
+            <button id="exportFullUnity">Eksport do Unity (pełny)</button>
           </div>
         </section>
 
         <section class="panel editor-panel">
-          <h2 class="panel-title">Редактор</h2>
+          <h2 class="panel-title">Edytor</h2>
 
           <div class="tool-buttons">
-            <button id="toolSmooth" class="btn tool-btn">Сгладить</button>
-            <button id="toolRaise" class="btn tool-btn">Поднять</button>
-            <button id="toolLower" class="btn tool-btn">Опустить</button>
-            <button id="toolReset" class="btn tool-btn">Сброс</button>
+            <button id="toolSmooth" class="btn tool-btn">Wygładź</button>
+            <button id="toolRaise" class="btn tool-btn">Podnieś</button>
+            <button id="toolLower" class="btn tool-btn">Obniż</button>
+            <button id="toolReset" class="btn tool-btn">Reset</button>
+            <button id="toggleBrush" class="btn tool-btn">Wyłącz pędzel</button>
+            <button id="undoBtn">Cofnij</button>
+            <button id="redoBtn">Ponów</button>
           </div>
 
           <label class="field">
-            <span class="label">Brush size</span>
+            <span class="label">Rozmiar pędzla</span>
             <input id="brushSize" type="range" min="1" max="100" value="10">
             <div class="value" id="brushSizeValue">10</div>
           </label>
 
           <label class="field">
-            <span class="label">Brush strength</span>
+            <span class="label">Siła pędzla</span>
             <input id="brushStrength" type="range" min="1" max="100" value="30">
             <div class="value" id="brushStrengthValue">30%</div>
           </label>
 
-          <div id="currentTool" class="current-tool">Инструмент: выбор</div>
+          <div id="currentTool" class="current-tool">Narzędzie: wybór</div>
         </section>
       </aside>
 
-      <section class="viewer" aria-label="3D просмотр">
+      <section class="viewer" aria-label="Podgląd 3D">
         <div id="threeContainer" class="three-container" role="application" aria-label="Three.js canvas"></div>
 
         <div id="loading" class="loading" aria-hidden="true">
           <div class="loading-inner">
-            <div class="loading-text">Загрузка...</div>
+            <div class="loading-text">Ładowanie...</div>
             <div id="loadingProgress" class="loading-progress">0%</div>
           </div>
         </div>
@@ -197,9 +197,9 @@
     </main>
 
     <footer class="footer">
-      <div>© Проект генератора ландшафта</div>
+      <div>© Projekt generatora terenu</div>
       <div class="footer-links">
-        <a href="#" id="helpLink">Помощь</a>
+        <a href="help.html" id="helpLink">Pomoc</a>
       </div>
     </footer>
   </div>

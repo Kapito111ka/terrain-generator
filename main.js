@@ -9,6 +9,7 @@ class TerrainGenerator {
 
         this.threeRenderer = null;
         this.currentHeightmap = null;
+        this.baseHeightmap = null;
 
         this.isGenerating = false;
         this.updateTimeout = null;
@@ -51,6 +52,13 @@ class TerrainGenerator {
 
             // создаём UE-рендерер и передаём ему loader
             this.threeRenderer = new ThreeRenderer('threeContainer', this.textureLoader);
+            // Создаём TerrainEditor (инструменты кисти) и связываем с генератором
+            try {
+                this.terrainEditor = new TerrainEditor(this.threeRenderer, this);
+            } catch (e) {
+                console.warn('Не удалось создать TerrainEditor', e);
+            }
+
 
             // Стартуем генерацию террейна
             setTimeout(() => this.generateTerrain(), 800);
@@ -290,11 +298,14 @@ class TerrainGenerator {
 
         const heightScale = this.getNumberValue('heightScale', 50);
         const waterLevel = this.getNumberValue('waterLevel', 15) / 100;
+        const colorIntensity = this.getNumberValue('colorIntensity', 100);
+        this.threeRenderer.setColorIntensity(colorIntensity);
+
 
         if (this.threeRenderer && this.threeRenderer.isInitialized) {
             const size = Math.sqrt(this.currentHeightmap.length) | 0;
             const lod = this.getLODValue();
-            this.threeRenderer.createTerrain(this.currentHeightmap, size, size, heightScale, lod);
+            this.threeRenderer.updateExistingTerrain(this.currentHeightmap,heightScale,waterLevel);
             this.threeRenderer.updateWater(size, size, heightScale, waterLevel);
         }
 
@@ -435,8 +446,6 @@ class TerrainGenerator {
 
             this.normalizeHeightmap(heightmap);
             heightmap = this.sanitizeHeightmap(heightmap);
-            this.currentHeightmap = heightmap;
-
 
             if (showProgress) this.updateProgress(90, 'Создание 3D-мешка...');
 
@@ -449,7 +458,11 @@ class TerrainGenerator {
                 this.threeRenderer.updateWater(size, size, heightScale, waterLevel);
             }
 
-            this.currentHeightmap = heightmap;
+            // сохраняем ОРИГИНАЛ
+            this.baseHeightmap = new Float32Array(heightmap);
+
+            // рабочая копия — с ней работают кисти, эрозия, undo
+            this.currentHeightmap = new Float32Array(heightmap);
             this.updateStats(heightmap, startTime);
             this.updateAlgorithmInfo(algorithm);
 

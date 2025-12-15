@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Pomoc – Generator terenu 3D</title>
+  <link rel="stylesheet" href="help.css">
+</head>
+<body>
+
+<header class="help-header">
+  <h1>Instrukcja obsługi – Generator terenu 3D</h1>
+  <p>
+    Ta strona opisuje szczegółowo działanie wszystkich elementów interfejsu
+    generatora terenu oraz proces eksportu do Unity.
+  </p>
+</header>
+
+<main class="help-content">
+
+  <!-- ================= GENEROWANIE ================= -->
+  <section class="help-section">
+    <h2>1. Generowanie</h2>
+
+    <p>
+      Ten blok służy do stworzenia nowego bazowego terenu.
+      Generowanie zawsze tworzy nowy ląd i usuwa poprzednie modyfikacje.
+    </p>
+
+    <ul>
+      <li><b>Seed</b> – liczba inicjalizująca losowość. Ten sam seed daje identyczny teren.</li>
+      <li><b>Nowy seed</b> – automatycznie losuje nową wartość seed.</li>
+      <li><b>Rozmiar siatki</b> – rozdzielczość heightmapy (np. 257×257). Im większa, tym więcej detali, ale wolniejsze działanie.</li>
+      <li><b>Algorytm</b> – wybór metody generowania:
+        <ul>
+          <li>Perlin – łagodny, naturalny teren</li>
+          <li>Diamond-Square – ostre, górzyste formy</li>
+          <li>Hybrydowy – połączenie obu (zalecane)</li>
+        </ul>
+      </li>
+      <li><b>Generuj</b> – uruchamia pełną generację terenu</li>
+    </ul>
+  </section>
+
+  <!-- ================= PARAMETRY SZUMU ================= -->
+  <section class="help-section">
+    <h2>2. Parametry szumu</h2>
+
+    <p>
+      Parametry wpływają na charakter bazowego szumu używanego do generacji.
+      Zmiana tych wartości powoduje ponowną generację terenu.
+    </p>
+
+    <ul>
+      <li><b>Skala</b> – im większa, tym większe i rzadsze formy terenu</li>
+      <li><b>Oktawy</b> – liczba warstw szumu; więcej = więcej detali</li>
+      <li><b>Chropowatość</b> – intensywność różnic wysokości</li>
+    </ul>
+  </section>
+
+  <!-- ================= DIAMOND SQUARE ================= -->
+  <section class="help-section">
+    <h2>3. Diamond-Square</h2>
+
+    <p>
+      Parametry specyficzne dla algorytmu Diamond-Square i trybu hybrydowego.
+    </p>
+
+    <ul>
+      <li><b>Chropowatość DS</b> – wpływa na ostrość i losowość gór</li>
+      <li><b>Waga hybrydy</b> – określa, jak mocno Diamond-Square miesza się z Perlinem</li>
+    </ul>
+  </section>
+
+  <!-- ================= UKSZTAŁTOWANIE ================= -->
+  <section class="help-section">
+    <h2>4. Ukształtowanie terenu</h2>
+
+    <p>
+      Ten blok kontroluje końcowy wygląd rzeźby terenu.
+    </p>
+
+    <ul>
+      <li><b>Skala wysokości</b> – pionowe wzmocnienie terenu (nie regeneruje mapy)</li>
+      <li><b>Iteracje erozji</b> – symulacja erozji (wygładza zbocza, tworzy doliny)</li>
+      <li><b>Wygładzanie</b> – redukuje ostre przejścia wysokości</li>
+    </ul>
+
+    <p class="note">
+      Skala wysokości działa w czasie rzeczywistym i nie niszczy edycji pędzlem.
+    </p>
+  </section>
+
+  <!-- ================= WYGLĄD ================= -->
+  <section class="help-section">
+    <h2>5. Wygląd</h2>
+
+    <p>
+      Parametry wizualne terenu, niezależne od geometrii.
+    </p>
+
+    <ul>
+      <li><b>Poziom wody</b> – wysokość płaszczyzny wody</li>
+      <li><b>Intensywność koloru</b> – nasycenie kolorów terenu</li>
+    </ul>
+  </section>
+
+  <!-- ================= NARZĘDZIA ================= -->
+  <section class="help-section">
+    <h2>6. Narzędzia</h2>
+
+    <ul>
+      <li><b>Zrzut ekranu</b> – zapisuje aktualny widok jako PNG</li>
+      <li><b>Eksport do Unity (pełny)</b> – tworzy ZIP zawierający:
+        <ul>
+          <li>Heightmap RAW 16-bit</li>
+          <li>Splatmap PNG</li>
+          <li>Plik konfiguracyjny Unity</li>
+          <li>Tekstury PBR</li>
+        </ul>
+      </li>
+    </ul>
+  </section>
+
+  <!-- ================= EDYTOR ================= -->
+  <section class="help-section">
+    <h2>7. Edytor terenu</h2>
+
+    <p>
+      Edytor umożliwia ręczną modyfikację wygenerowanego terenu.
+      Wszystkie zmiany są zapisywane i mogą być cofane.
+    </p>
+
+    <ul>
+      <li><b>Wygładź</b> – lokalne wygładzanie</li>
+      <li><b>Podnieś</b> – podnosi teren</li>
+      <li><b>Obniż</b> – obniża teren</li>
+      <li><b>Reset</b> – przywraca teren do stanu po generacji</li>
+      <li><b>Wyłącz pędzel</b> – odblokowuje kamerę</li>
+      <li><b>Cofnij / Ponów</b> – undo / redo</li>
+      <li><b>Rozmiar pędzla</b> – promień działania</li>
+      <li><b>Siła pędzla</b> – intensywność modyfikacji</li>
+    </ul>
+  </section>
+
+  <!-- ================= UNITY ================= -->
+  <section class="help-section">
+    <h2>8. Import do Unity</h2>
+
+    <ol>
+      <li>Pobierz archiwum ZIP z eksportu</li>
+      <li>Rozpakuj je do projektu Unity</li>
+      <li>Dodaj skrypt importera do <code>Assets/Editor</code></li>
+      <li>W Unity wybierz: <b>Tools → Import Procedural Terrain (URP)</b></li>
+    </ol>
+
+    <p>
+      <a href="AutoTerrainURPImporter.cs" download>
+        Pobierz skrypt importera Unity
+      </a>
+    </p>
+
+    <p class="warning">
+      Tekstury w przeglądarce i w Unity mogą wyglądać inaczej
+      z powodu różnic w shaderach, oświetleniu i ustawieniach URP.
+    </p>
+  </section>
+
+</main>
+
+<footer class="help-footer">
+  <a href="index.html">Powrót do generatora</a>
+</footer>
+
+</body>
+</html>
