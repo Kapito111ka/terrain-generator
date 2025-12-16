@@ -420,6 +420,16 @@ class ThreeRenderer {
         );
         }
     }
+    if (this.terrain &&
+    this.terrain.material &&
+    this.terrain.material.userData &&
+    this.terrain.material.userData.shader) {
+
+    const shader = this.terrain.material.userData.shader;
+    if (shader.uniforms && shader.uniforms.waterEnabled) {
+        shader.uniforms.waterEnabled.value = this.waterEnabled ? 1.0 : 0.0;
+    }
+    }
 
     return this.waterEnabled;
 }
@@ -542,8 +552,8 @@ class ThreeRenderer {
             shader.uniforms.heightScale = { value: heightScale };
             shader.uniforms.parallaxScale = { value: 0.03 };
             shader.uniforms.waterLevel01  = { value: this.waterLevel01 };
+            shader.uniforms.waterEnabled  = { value: this.waterEnabled ? 1.0 : 0.0 };
             shader.uniforms.colorIntensity = { value: 1.0 };
-
             // ----------------------------------------------------
             // Добавляем мировые позиции и нормали
             // ----------------------------------------------------
@@ -587,6 +597,7 @@ class ThreeRenderer {
                 uniform float heightScale;
                 uniform float parallaxScale;
                 uniform float waterLevel01; 
+                uniform float waterEnabled;
                 uniform float colorIntensity;
 
                 // текстуры
@@ -701,12 +712,16 @@ class ThreeRenderer {
                 // ------------------------------------------------
                 // Shoreline: усиливаем песок вокруг уровня воды
                 // ------------------------------------------------
-                float shoreWidth = 0.04;                    // ширина береговой зоны в 0..1
-                float dh = abs(h - waterLevel01);           // высотное расстояние до уровня воды
-                float shore = 1.0 - smoothstep(shoreWidth, shoreWidth * 2.0, dh);
+                float shore = 0.0;
 
-                // Добавляем песка у берега (на пологих участках)
-                wSand += shore * (1.0 - slope) * 2.0;
+                if (waterEnabled > 0.5) {
+                    float shoreInner = waterLevel01 + 0.015;
+                    float shoreOuter = waterLevel01 + 0.05;
+                    shore = smoothstep(shoreInner, shoreOuter, h);
+                }
+
+                // песок у берега ТОЛЬКО если вода включена
+                wSand += shore * (1.0 - slope) * 1.8;
 
                 // небольшая стабилизация, чтобы не было нулевой суммы
                 wSand  = max(wSand,  0.0001);
