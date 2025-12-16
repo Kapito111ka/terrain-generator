@@ -5,7 +5,7 @@ class TerrainGenerator {
         this.erosion = new HydraulicErosion();
 
         this.threeRenderer = null;
-       this.currentHeightmap = null;
+        this.currentHeightmap = null;
         this.baseHeightmap = null;
 
         this.isGenerating = false;
@@ -73,6 +73,17 @@ class TerrainGenerator {
             const seedInput = document.getElementById('seed');
             if (seedInput) seedInput.value = this.currentSeed;
             this.generateTerrain();
+        });
+
+        this.addEventListenerSafe('toggleWater', 'click', () => {
+        if (!this.threeRenderer) return;
+
+        const enabled = this.threeRenderer.toggleWater();
+
+        const btn = document.getElementById('toggleWater');
+        if (btn) {
+            btn.textContent = enabled ? 'Wyłącz wodę' : 'Włącz wodę';
+        }
         });
 
         this.setupRealtimeControls();

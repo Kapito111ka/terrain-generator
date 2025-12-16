@@ -10,7 +10,13 @@ class ThreeRenderer {
         this.terrain = null;
 
         this.water = null;
+        this.waterEnabled = true;
         this.waterMaterial = null;
+
+        this.lastTerrainWidth = 0;
+        this.lastTerrainHeight = 0;
+        this.lastHeightScale = 1;
+
 
         this.isInitialized = false;
         this.lights = [];
@@ -211,7 +217,9 @@ class ThreeRenderer {
             console.error("Renderer ещё не инициализирован");
             return;
         }
-
+        this.lastTerrainWidth = width;
+        this.lastTerrainHeight = height;
+        this.lastHeightScale = heightScale;
         console.log("Создание террейна:", { width, height, heightScale, lod });
 
         if (this.terrain) {
@@ -368,6 +376,33 @@ class ThreeRenderer {
 
         normal.needsUpdate = true;
     }
+
+    toggleWater() {
+    this.waterEnabled = !this.waterEnabled;
+
+    if (!this.waterEnabled) {
+        if (this.water) {
+            this.scene.remove(this.water);
+            this.water.geometry.dispose();
+            this.water.material.dispose();
+            this.water = null;
+            this.waterMaterial = null;
+        }
+    } else {
+        // пересоздаём воду при следующем updateWater
+        if (this.terrain) {
+            const size = Math.sqrt(this.terrain.geometry.attributes.position.count) | 0;
+            this.updateWater(
+            this.lastTerrainWidth,
+            this.lastTerrainHeight,
+            this.lastHeightScale,
+            this.waterLevel01
+        );
+        }
+    }
+
+    return this.waterEnabled;
+}
 
     // ----------------------------------------------------------
     // Vertex colors (UE5-style base layer mask)
@@ -715,7 +750,7 @@ class ThreeRenderer {
     // ВОДА: динамическая, с волнами и френелем
     // ----------------------------------------------------------
     updateWater(width, height, heightScale, waterLevel) {
-        if (!this.isInitialized) return;
+        if (!this.isInitialized || !this.waterEnabled) return;
 
         const y = heightScale * waterLevel; // waterLevel 0..1
 
@@ -791,6 +826,7 @@ class ThreeRenderer {
 
             this.scene.add(water);
             this.water = water;
+            this.water.visible = this.waterEnabled;
             } else {
                 // просто обновляем положение/размер
                 this.water.position.y = y;
@@ -856,9 +892,15 @@ class ThreeRenderer {
         return local.y;
     }
 
-    // ----------------------------------------------------------
-    // Уничтожение сцены и рендера
-    // ----------------------------------------------------------
+    setWaterEnabled(enabled) {
+    this.waterEnabled = enabled;
+
+    if (this.water) {
+        this.water.visible = enabled;
+    }
+    }
+
+
     dispose() {
     console.log("Удаление ThreeRenderer...");
 
