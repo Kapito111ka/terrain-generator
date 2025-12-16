@@ -43,18 +43,25 @@ class HydraulicErosion {
             const gradient = this.calculateGradient(heightmap, width, height, posX, posY);
             
             // Обновляем направление
-            dirX = (dirX * 0.5 - gradient.x * 0.5);
-            dirY = (dirY * 0.5 - gradient.y * 0.5);
-            
+            const inertia = 0.9;     // чем выше — тем стабильнее
+            const gravity = 1.0;
+
+            dirX = dirX * inertia - gradient.x * gravity * (1 - inertia);
+            dirY = dirY * inertia - gradient.y * gravity * (1 - inertia);
+                        
             // Нормализуем направление
             const len = Math.sqrt(dirX * dirX + dirY * dirY);
             if (len > 0) {
                 dirX /= len;
                 dirY /= len;
             }
+            if (len < 1e-4) {
+                break;
+            }
 
-            const newPosX = posX + dirX;
-            const newPosY = posY + dirY;
+            const maxStep = 1.0;
+            const newPosX = posX + dirX * maxStep;
+            const newPosY = posY + dirY * maxStep;
 
             // Проверяем новые границы
             if (newPosX < 0 || newPosX >= width - 1 || newPosY < 0 || newPosY >= height - 1) {
@@ -62,19 +69,23 @@ class HydraulicErosion {
             }
 
             // Вычисляем разницу высот
-            const newHeight = this.getHeight(heightmap, width, newPosX, newPosY);
-            const currentHeight = this.getHeight(heightmap, width, posX, posY);
+            const newHeight = this.getHeight(heightmap, width, height, newPosX, newPosY);
+            const currentHeight = this.getHeight(heightmap, width, height, posX, posY);
             const heightDiff = newHeight - currentHeight;
 
             // Пропускаем если движемся вверх
             if (heightDiff > 0) {
                 // Откладываем осадок при движении вверх
-                const depositAmount = Math.min(sediment, heightDiff);
+                const depositRate = 0.3;
+                const depositAmount = Math.min(sediment, heightDiff * depositRate);
+
                 this.addHeight(heightmap, width, posX, posY, depositAmount);
                 sediment -= depositAmount;
             } else {
                 // Эродируем при движении вниз
-                const erosionAmount = Math.min(-heightDiff * 0.1, 0.01) * intensity;
+                const erosionRate = 0.05;
+                const erosionAmount = Math.min(-heightDiff * erosionRate, 0.005) * intensity;
+
                 sediment += erosionAmount;
                 this.addHeight(heightmap, width, posX, posY, -erosionAmount);
             }
@@ -96,10 +107,11 @@ class HydraulicErosion {
         const coordX = Math.floor(posX);
         const coordY = Math.floor(posY);
         
-        const heightL = this.getHeight(heightmap, width, coordX - 1, coordY);
-        const heightR = this.getHeight(heightmap, width, coordX + 1, coordY);
-        const heightD = this.getHeight(heightmap, width, coordX, coordY - 1);
-        const heightU = this.getHeight(heightmap, width, coordX, coordY + 1);
+        const heightL = this.getHeight(heightmap, width, height, coordX - 1, coordY);
+        const heightR = this.getHeight(heightmap, width, height, coordX + 1, coordY);
+        const heightD = this.getHeight(heightmap, width, height, coordX, coordY - 1);
+        const heightU = this.getHeight(heightmap, width, height, coordX, coordY + 1);
+
         
         return {
             x: (heightR - heightL) * 0.5,
@@ -107,11 +119,12 @@ class HydraulicErosion {
         };
     }
 
-    getHeight(heightmap, width, x, y) {
+    getHeight(heightmap, width, height, x, y) {
         const coordX = Math.max(0, Math.min(width - 1, Math.floor(x)));
-        const coordY = Math.max(0, Math.min(width - 1, Math.floor(y)));
+        const coordY = Math.max(0, Math.min(height - 1, Math.floor(y)));
         return heightmap[coordY * width + coordX];
     }
+
 
     addHeight(heightmap, width, x, y, delta) {
         const coordX = Math.max(0, Math.min(width - 1, Math.floor(x)));

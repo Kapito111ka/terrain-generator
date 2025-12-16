@@ -2,7 +2,8 @@ class TerrainGenerator {
     constructor() {
         this.perlin = new PerlinNoise();
         this.diamondSquare = new DiamondSquare();
-        this.erosion = new HydraulicErosion();
+        this.hydraulicErosion = new HydraulicErosion();
+        this.thermalErosion   = new ThermalErosion();
 
         this.threeRenderer = null;
         this.currentHeightmap = null;
@@ -405,7 +406,13 @@ class TerrainGenerator {
                 this.updateProgress(30, 'Формирование горных массивов...');
 
             // убираем "иголки", делаем склон реалистичным
-            heightmap = this.applyThermalErosion(heightmap, size, 10, 0.02, 0.5);
+            const thermalIters = Math.max(5, Math.floor(erosionIterations / 400));
+            heightmap = this.thermalErosion.apply(
+                heightmap,
+                size,
+                size,
+                thermalIters
+            );
 
             if (showProgress)
                 this.updateProgress(35, 'Термальная эрозия...');
@@ -435,7 +442,13 @@ class TerrainGenerator {
             if (erosionIterations > 0) {
                 if (showProgress) this.updateProgress(60, 'Эрозия (размывание склонов)...');
                 const limitedErosion = Math.min(erosionIterations, 4000);
-                heightmap = this.erosion.applyErosion(heightmap, size, size, limitedErosion, 0.4);
+                heightmap = this.hydraulicErosion.applyErosion(
+                heightmap,
+                size,
+                size,
+                Math.floor(limitedErosion * 0.15),
+                0.3
+            );
             }
 
             // -------- финальное лёгкое сглаживание --------

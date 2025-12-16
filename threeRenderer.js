@@ -270,11 +270,31 @@ class ThreeRenderer {
         this.terrain.position.set(-width / 2, 0, -height / 2);
 
         this.scene.add(this.terrain);
+        this.updateStats();
 
         console.log("Террейн создан.");
         
         this.positionCamera(width, height, heightScale);
     }
+
+        updateStats() {
+        if (!this.terrain || !this.terrain.geometry) return;
+
+        const geo = this.terrain.geometry;
+
+        const triangles = geo.index
+            ? geo.index.count / 3
+            : geo.attributes.position.count / 3;
+
+        const vertices = geo.attributes.position.count;
+
+        const polyEl = document.getElementById("polyCount");
+        const vertEl = document.getElementById("vertexCount");
+
+        if (polyEl) polyEl.textContent = Math.round(triangles).toLocaleString();
+        if (vertEl) vertEl.textContent = Math.round(vertices).toLocaleString();
+    }
+
 
       updateExistingTerrain(heightmap, heightScale = 80, waterLevel = 0.15) {
         if (!this.terrain || !this.terrain.geometry || !heightmap) return;
