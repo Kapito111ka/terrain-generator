@@ -176,20 +176,23 @@ class TerrainGenerator {
         }
 
         const applyChange = (value) => {
-            const v = parseFloat(value);
+        const v = parseFloat(value);
 
-            if (numberEl) {
-                numberEl.value = v;
-            }
+        // отладочный лог — покажет, что контрол изменился
+        console.log(`[bindRangeAndNumber] param=${param} value=${v} mode=${mode}`);
 
-            this.updateParameterValue(param, v);
+        if (numberEl) {
+            numberEl.value = v;
+        }
 
-            if (mode === 'regenerate') {
-                this.scheduleRegeneration();
-            } else if (mode === 'apply') {
-                this.scheduleRealtimeUpdate();
-            }
-        };
+        this.updateParameterValue(param, v);
+
+        if (mode === 'regenerate') {
+            this.scheduleRegeneration();
+        } else if (mode === 'apply') {
+            this.scheduleRealtimeUpdate();
+        }
+    };
 
         // изменение слайдера
         rangeEl.addEventListener('input', (e) => {
@@ -234,6 +237,7 @@ class TerrainGenerator {
             'octaves',
             'roughness',
             'erosionIterations',
+            'thermalErosion',
             'smoothing',
             'dsRoughness',
             'hybridWeight'
@@ -368,6 +372,8 @@ class TerrainGenerator {
             const hybridWeight = this.getNumberValue('hybridWeight', 35) / 100;
             const heightScale = this.getNumberValue('heightScale', 35);
             const erosionIterations = this.getNumberValue('erosionIterations', 4000);
+            const thermalStrength = this.getNumberValue('thermalErosion', 0);
+            console.log('[Thermal erosion]', thermalStrength);
             const smoothing  = this.getNumberValue('smoothing', 45);
 
             console.log('Generowanie terenu z ulepszonymi algorytmami.:', {
@@ -416,24 +422,8 @@ class TerrainGenerator {
             if (showProgress)
                 this.updateProgress(25, 'Базовый рельеф создан.');
 
-            // =====================================================
-            // 🔥 ЧАСТЬ 2.2 — горные массивы + термальная эрозия
-            // =====================================================
 
-            // сглаживаем пики, объединяем вершины в хребты
-            heightmap = this.shapeMountains(heightmap, size, 0.6, 0.55);
 
-            if (showProgress)
-                this.updateProgress(30, 'Формирование горных массивов...');
-
-            // убираем "иголки", делаем склон реалистичным
-            const thermalIters = Math.max(5, Math.floor(erosionIterations / 400));
-            heightmap = this.thermalErosion.apply(
-                heightmap,
-                size,
-                size,
-                thermalIters
-            );
 
             if (showProgress)
                 this.updateProgress(35, 'Термальная эрозия...');
@@ -473,9 +463,32 @@ class TerrainGenerator {
                 );
             }
             if (showProgress) this.updateProgress(85, 'Нормализация высот...');
+                        heightmap = this.shapeMountains(heightmap, size, 0.6, 0.55);
 
+            if (showProgress)
+                this.updateProgress(30, 'Формирование горных массивов...');
+
+            // --- НОРМАЛИЗАЦИЯ ДО ТЕРМАЛЬНОЙ ЭРОЗИИ ---
             this.normalizeHeightmap(heightmap);
+
+            // --- ФИНАЛЬНАЯ ТЕРМАЛЬНАЯ ЭРОЗИЯ ---
+            const thermalIters = Math.round(thermalStrength * 0.6);
+
+            if (thermalIters > 0) {
+                if (showProgress)
+                    this.updateProgress(80, 'Финальная термальная эрозия...');
+
+                heightmap = this.thermalErosion.apply(
+                    heightmap,
+                    size,
+                    size,
+                    thermalIters,
+                    thermalStrength / 100
+                );
+            }
+
             heightmap = this.sanitizeHeightmap(heightmap);
+
 
             if (showProgress) this.updateProgress(90, 'Создание 3D-мешка...');
 

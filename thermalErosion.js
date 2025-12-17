@@ -1,19 +1,23 @@
 class ThermalErosion {
     constructor() {
-        this.talus = 0.005;     // намного мягче
-        this.strength = 0.25;    // сколько материала переносим
-        this.minHeight = 0.35;   // ниже — эрозии почти нет
-        this.maxHeight = 0.85;  
+    this.baseTalus = 0.003;
+    this.talus = this.baseTalus;
+    this.strength = 0.25;
+    this.minHeight = 0.35;
+    this.maxHeight = 0.85;
     }
 
-    apply(heightmap, width, height, iterations = 1) {
-        const map = new Float32Array(heightmap);
+    apply(heightmap, width, height, iterations = 1, strength01 = 1.0) {
+    const map = new Float32Array(heightmap);
 
-        for (let iter = 0; iter < iterations; iter++) {
-            this.singlePass(map, width, height);
-        }
+    // динамический talus от силы
+    this.talus = this.baseTalus + strength01 * 0.004;
 
-        return map;
+    for (let iter = 0; iter < iterations; iter++) {
+        this.singlePass(map, width, height);
+    }
+
+    return map;
     }
 
     singlePass(map, width, height) {
