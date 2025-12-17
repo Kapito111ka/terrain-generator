@@ -37,7 +37,11 @@ class TerrainGenerator {
         this.initializeEventListeners();
         this.initializeThreeJS();
 
-
+        document.querySelectorAll('.collapsible .panel-title').forEach(title => {
+        title.addEventListener('click', () => {
+            title.parentElement.classList.toggle('collapsed');
+            });
+        });
         window.addEventListener('resize', () => {
             if (this.threeRenderer) this.threeRenderer.onResize();
         });
