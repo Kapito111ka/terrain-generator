@@ -5,6 +5,10 @@ class PerlinNoise {
         this.init();
     }
 
+    setSeed(seed) {
+    this.seed = seed;
+    this.init(); // пересобираем permutation
+    }
     init() {
         const p = new Array(256);
         for (let i = 0; i < 256; i++) {
@@ -142,8 +146,7 @@ class PerlinNoise {
                 
                 // Приводим к диапазону [0, 1]
                 elevation = (elevation + 1) * 0.5;
-                const amplitudeFactor = Math.min(1, scale / 60);
-                elevation *= amplitudeFactor;
+                elevation *= scale / 100;
                 heightmap[y * width + x] = elevation;
             }
         }

@@ -710,6 +710,24 @@ class ThreeRenderer {
                 float wSnow = pow(hHigh, 2.0) * (1.0 - slope * 0.7);
 
                 // ------------------------------------------------
+                // PRIORITY ORDER (top layers override lower ones)
+                // ------------------------------------------------
+
+                // cliff dominates everything below
+                wRock  *= (1.0 - wCliff);
+                wDirt  *= (1.0 - wCliff);
+                wGrass *= (1.0 - wCliff);
+                wSand  *= (1.0 - wCliff);
+
+                // rock dominates dirt / grass / sand
+                wDirt  *= (1.0 - wRock);
+                wGrass *= (1.0 - wRock);
+                wSand  *= (1.0 - wRock);
+
+                // grass dominates sand
+                wSand *= (1.0 - wGrass);
+
+                // ------------------------------------------------
                 // Shoreline: усиливаем песок вокруг уровня воды
                 // ------------------------------------------------
                 float shore = 0.0;

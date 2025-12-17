@@ -12,9 +12,16 @@ class DiamondSquare {
             t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
             return ((t ^ t >>> 14) >>> 0) / 4294967296;
         };
+    
     }
-
+    
+    setSeed(seed) {
+    this.seed = seed;
+    this.random = this.mulberry32(seed);
+    }
+    
     generate(size, roughness = 0.5, initialHeight = 0.3) {
+
         // Размер должен быть степенью двойки + 1 
         const power = Math.ceil(Math.log2(size - 1));
         const actualSize = Math.pow(2, power) + 1;

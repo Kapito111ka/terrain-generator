@@ -20,6 +20,19 @@ class TerrainGenerator {
             this.initialize();
         }
     }
+    setSeed(seed) {
+    this.currentSeed = seed;
+
+    const seedInput = document.getElementById('seed');
+    if (seedInput) seedInput.value = seed;
+
+    // СИНХРОНИЗАЦИЯ ВСЕХ ГЕНЕРАТОРОВ
+    this.diamondSquare.setSeed(seed);
+    this.perlinNoise.setSeed(seed);
+
+    console.log('[Seed установлен]', seed);
+}
+
 
     initialize() {
         this.initializeEventListeners();
@@ -67,12 +80,17 @@ class TerrainGenerator {
     initializeEventListeners() {
         console.log('Инициализация обработчиков событий.');
 
-        this.addEventListenerSafe('generate', 'click', () => this.generateTerrain());
+        this.addEventListenerSafe('generate', 'click', () => {
+            const seedInput = document.getElementById('seed');
+            const seed = seedInput ? parseInt(seedInput.value) : this.currentSeed;
+
+            this.setSeed(seed);
+            this.generateTerrain();
+        });
 
         this.addEventListenerSafe('randomSeed', 'click', () => {
-            this.currentSeed = Math.floor(Math.random() * 100000);
-            const seedInput = document.getElementById('seed');
-            if (seedInput) seedInput.value = this.currentSeed;
+            const newSeed = Math.floor(Math.random() * 100000);
+            this.setSeed(newSeed);
             this.generateTerrain();
         });
 
