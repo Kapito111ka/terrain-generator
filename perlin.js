@@ -118,7 +118,7 @@ class PerlinNoise {
         return value / maxValue;
     }
 
-    generateHighResolutionHeightmap(width, height, scale, octaves, persistence, lacunarity) {
+    generateHighResolutionHeightmap(width, height, scale, octaves, persistence, lacunarity,amplitude) {
         const heightmap = new Float32Array(width * height);
         
         console.log('Генерация шума с улучшенными параметрами:', { 
@@ -146,6 +146,7 @@ class PerlinNoise {
                 
                 // Приводим к диапазону [0, 1]
                 elevation = (elevation + 1) * 0.5;
+                elevation *= amplitude;
                 elevation *= scale / 100;
                 heightmap[y * width + x] = elevation;
             }

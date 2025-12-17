@@ -26,12 +26,11 @@ class TerrainGenerator {
     const seedInput = document.getElementById('seed');
     if (seedInput) seedInput.value = seed;
 
-    // СИНХРОНИЗАЦИЯ ВСЕХ ГЕНЕРАТОРОВ
     this.diamondSquare.setSeed(seed);
-    this.perlinNoise.setSeed(seed);
+    this.perlin.setSeed(seed); 
 
     console.log('[Seed установлен]', seed);
-}
+    }
 
 
     initialize() {
@@ -435,12 +434,6 @@ class TerrainGenerator {
             if (showProgress)
                 this.updateProgress(35, 'Термальная эрозия...');
 
-            // =====================================================
-
-
-            // 🔥 НОВОЕ: склеиваем пики в горные массивы
-            heightmap = this.shapeMountains(heightmap, size, 0.62, 0.55);
-
             if (showProgress) this.updateProgress(40, 'Базовый рельеф создан.');
 
             // волновая коррекция
@@ -456,29 +449,25 @@ class TerrainGenerator {
                 laplacianSmooth(heightmap, size, lapIter, lapAlpha);
             }
 
+            // -------- финальное лёгкое сглаживание --------
+            if (smoothing > 0) {
+                if (showProgress) this.updateProgress(75, 'Финальное сглаживание...');
+                this.applyLightSmoothing(heightmap, size, 0.02);
+                laplacianSmooth(heightmap, size, 1, 0.15);
+            }
+
             // -------- эрозия --------
             if (erosionIterations > 0) {
                 if (showProgress) this.updateProgress(60, 'Эрозия (размывание склонов)...');
-                const limitedErosion = Math.min(erosionIterations, 4000);
+                const erosionStrength = Math.min(1.0, erosionIterations / 3000);
                 heightmap = this.hydraulicErosion.applyErosion(
                 heightmap,
                 size,
                 size,
-                Math.floor(limitedErosion * 0.15),
-                0.3
-            );
+                erosionIterations,        // БЕЗ *0.15
+                erosionStrength           // ← зависит от UI
+                );
             }
-
-            // -------- финальное лёгкое сглаживание --------
-            if (smoothing > 0) {
-                if (showProgress) this.updateProgress(75, 'Финальное сглаживание...');
-                heightmap = this.applyLightSmoothing(heightmap, size, 0.06);
-
-                const finalLapIter = 1;
-                const finalLapAlpha = 0.25 + (smoothing / 100) * 0.25;
-                laplacianSmooth(heightmap, size, finalLapIter, finalLapAlpha);
-            }
-
             if (showProgress) this.updateProgress(85, 'Нормализация высот...');
 
             this.normalizeHeightmap(heightmap);
@@ -518,11 +507,12 @@ class TerrainGenerator {
     // ---------------- ВСПОМОГАТЕЛЬНЫЕ ГЕНЕРАТОРЫ ----------------
 
     generatePerlinHeightmap(size, scale, octaves, roughness) {
-        const persistence = 0.45;        // чуть меньше — плавнее
-        const lacunarity  = 1.9;         // немного меньше частота
-        console.log('Generowanie szumu z ulepszonymi parametrami.:', { scale, octaves, persistence, lacunarity });
+        const persistence = 0.25 + roughness * 0.6;
+        const lacunarity  = 1.7  + roughness * 0.6;
+        const amplitude = 0.4 + roughness * 1.2;
+        console.log('Generowanie szumu z ulepszonymi parametrami.:', { scale, octaves, persistence, lacunarity,amplitude });
         return this.perlin.generateHighResolutionHeightmap(
-            size, size, scale, octaves, persistence, lacunarity
+            size, size, scale, octaves, persistence, lacunarity,amplitude
         );
     }
 
@@ -705,47 +695,6 @@ class TerrainGenerator {
         return heightmap;
     }
 
-    shapeMountains(heightmap, size, threshold = 0.62, merge = 0.55) {
-            const out = new Float32Array(heightmap.length);
-            const n = size;
-
-            for (let y = 0; y < n; y++) {
-                for (let x = 0; x < n; x++) {
-                    const i = y * n + x;
-                    const h = heightmap[i];
-
-                    // среднее по окрестности 5x5
-                    let sum = 0, count = 0;
-                    for (let oy = -2; oy <= 2; oy++) {
-                        for (let ox = -2; ox <= 2; ox++) {
-                            const nx = x + ox, ny = y + oy;
-                            if (nx < 0 || nx >= n || ny < 0 || ny >= n) continue;
-                            sum += heightmap[ny * n + nx];
-                            count++;
-                        }
-                    }
-
-                    const avg = sum / count;
-                    let v = h;
-
-                    // высокогорье — тянем к среднему, чтобы вершины слипались в массив
-                    if (h > threshold) {
-                        const t = (h - threshold) / (1.0 - threshold);     // 0..1
-                        const influence = t * merge;                       // сила влияния
-                        v = h * (1.0 - influence) + avg * influence;
-                    }
-
-                    // одиночный пик среди более низкой среды — прижимаем
-                    if (h > threshold * 0.85 && avg < threshold * 0.65) {
-                        v = h * 0.4 + avg * 0.6;
-                    }
-
-                    out[i] = v;
-                }
-            }
-
-            return out;
-        }
     applyAdvancedSmoothing(heightmap, size, intensity = 0.3) {
         const n = size;
         const tmp = new Float32Array(heightmap.length);
@@ -896,8 +845,21 @@ class TerrainGenerator {
         this.updateElementText('generationTime', `Время: ${(genTime / 1000).toFixed(1)}с`);
 
         if (this.threeRenderer && this.threeRenderer.terrain) {
-            const vertexCount = this.threeRenderer.terrain.geometry.attributes.position.count;
-            this.updateElementText('vertexCount', `Wierzchołki: ${vertexCount.toLocaleString()}`);
+            const geom = this.threeRenderer.terrain.geometry;
+
+            const vertexCount = geom.attributes.position.count;
+            this.updateElementText(
+                'vertexCount',
+                `Wierzchołki: ${vertexCount.toLocaleString()}`
+            );
+
+            if (geom.index) {
+                const polyCount = geom.index.count / 3;
+                this.updateElementText(
+                    'polygonCount',
+                    `Poligony: ${polyCount.toLocaleString()}`
+                );
+            }
         }
     }
 
