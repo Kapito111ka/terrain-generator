@@ -216,13 +216,25 @@ public class AutoTerrainURPImporter : EditorWindow
             Debug.LogWarning($"[Importer] Не нашёл normal-текстуру для '{materialFolder}'");
 
         layer.diffuseTexture = colorTex;
-        layer.normalMapTexture = normalTex;
+
+        if (normalTex != null)
+        {
+            // Помечаем как normal map
+            TextureImporter ti = AssetImporter.GetAtPath(AssetDatabase.GetAssetPath(normalTex)) as TextureImporter;
+            if (ti != null)
+            {
+                ti.textureType = TextureImporterType.NormalMap;
+                ti.SaveAndReimport();
+            }
+            layer.normalMapTexture = normalTex;  // Применяем normal map
+        }
 
         AssetDatabase.CreateAsset(layer, layerAssetPath);
         AssetDatabase.SaveAssets();
 
         return layer;
     }
+
 
     private Texture2D LoadTextureFlexible(string pathWithoutExt)
     {
