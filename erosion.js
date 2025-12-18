@@ -2,14 +2,14 @@ class HydraulicErosion {
     constructor() {
         // Параметры (можешь подбирать под интерактивный режим)
         this.waterAmount = 0.01;
-        this.sedimentCapacityFactor = 4.0;
-        this.minSedimentCapacity = 0.01;
-        this.evaporateSpeed = 0.02; // чуть быстрее испаряется в интерактиве
-        this.gravity = 4.0;
-        this.maxDropletLifetime = 30;
-        this.erosionSpeed = 0.3;    // скорость снятия материала
-        this.depositionSpeed = 0.3; // скорость осаждения
-        this.maxErosionPerStep = 0.05; // относительный лимит (можно уменьшать)
+        this.sedimentCapacityFactor = 9.0;  // было 4.0
+        this.minSedimentCapacity = 0.03;    // было 0.01
+        this.evaporateSpeed = 0.012;  // было 0.02
+        this.gravity = 7.0;                 // было 4.0
+        this.maxDropletLifetime = 45;  // было 30
+        this.erosionSpeed = 0.75;       // было 0.3
+        this.depositionSpeed = 0.35;   // чуть слабее, чем эрозия
+        this.maxErosionPerStep = 0.12; // было 0.05
     }
 
     applyErosion(heightmap, width, height, iterations, intensity = 1.0) {
@@ -74,6 +74,7 @@ class HydraulicErosion {
             if (posX < 1 || posX >= width - 1 || posY < 1 || posY >= height - 1) break;
 
             const curHeight = this.sampleHeight(map, width, height, posX, posY);
+            const heightBoost = 1.0 + (1.0 - curHeight) * 0.8;
             const grad = this.calculateGradient(map, width, height, posX, posY);
 
             // inertia + гравитация дают новое направление
@@ -119,7 +120,10 @@ class HydraulicErosion {
 
                 amount = Math.max(0, amount);
                 // лимит на один шаг, с учётом intensity
-                amount = Math.min(amount, this.maxErosionPerStep * intensity);
+                amount = Math.min(
+                    amount,
+                    this.maxErosionPerStep * (0.5 + intensity * 1.5) * heightBoost
+                );
 
                 // снимаем материал
                 if (amount > 1e-8) {

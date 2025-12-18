@@ -450,6 +450,12 @@ class TerrainGenerator {
                 laplacianSmooth(heightmap, size, 1, 0.15);
             }
 
+            if (showProgress) this.updateProgress(85, 'Нормализация высот...');
+                        heightmap = this.shapeMountains(heightmap, size, 0.6, 0.55);
+
+            if (showProgress)
+                this.updateProgress(30, 'Формирование горных массивов...');
+
             // -------- эрозия --------
             if (erosionIterations > 0) {
                 if (showProgress) this.updateProgress(60, 'Эрозия (размывание склонов)...');
@@ -462,12 +468,6 @@ class TerrainGenerator {
                 erosionStrength           // ← зависит от UI
                 );
             }
-            if (showProgress) this.updateProgress(85, 'Нормализация высот...');
-                        heightmap = this.shapeMountains(heightmap, size, 0.6, 0.55);
-
-            if (showProgress)
-                this.updateProgress(30, 'Формирование горных массивов...');
-
             // --- НОРМАЛИЗАЦИЯ ДО ТЕРМАЛЬНОЙ ЭРОЗИИ ---
             this.normalizeHeightmap(heightmap);
 
@@ -796,7 +796,7 @@ class TerrainGenerator {
             h = (h - min) / range;                  // 0..1
 
             // мягко поджимаем вершины
-            h = Math.pow(h, 1.25);
+            h = Math.pow(h, 1.05);
 
             // лёгкая компрессия верхних 10%
             if (h > 0.9) {
