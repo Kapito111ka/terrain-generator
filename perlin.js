@@ -5,6 +5,10 @@ class PerlinNoise {
         this.init();
     }
 
+    setSeed(seed) {
+    this.seed = seed;
+    this.init(); // пересобираем permutation
+    }
     init() {
         const p = new Array(256);
         for (let i = 0; i < 256; i++) {
@@ -102,8 +106,8 @@ class PerlinNoise {
 
         for (let i = 0; i < octaves; i++) {
             // Случайное смещение для каждой октавы
-            const jitterX = (Math.random() - 0.5) * jitter / frequency;
-            const jitterY = (Math.random() - 0.5) * jitter / frequency;
+            const jitterX = this.noise(i * 17.13, i * 29.77) * jitter / frequency;
+            const jitterY = this.noise(i * 43.91, i * 11.58) * jitter / frequency;
             
             value += this.noise(x * frequency + jitterX, y * frequency + jitterY) * amplitude;
             maxValue += amplitude;
@@ -114,7 +118,7 @@ class PerlinNoise {
         return value / maxValue;
     }
 
-    generateHighResolutionHeightmap(width, height, scale, octaves, persistence, lacunarity) {
+    generateHighResolutionHeightmap(width, height, scale, octaves, persistence, lacunarity,amplitude) {
         const heightmap = new Float32Array(width * height);
         
         console.log('Генерация шума с улучшенными параметрами:', { 
@@ -133,10 +137,8 @@ class PerlinNoise {
                 let elevation = this.fractalNoise(nx, ny, octaves, persistence, lacunarity, autoJitter);
                 
                 // Добавляем мульти-частотные детали для разбивания паттернов
-                if (octaves > 1) {
-                    // Высокочастотный шум для мелких деталей
+                if (octaves > 1 && scale > 40) {
                     const highFreqNoise = this.noise(nx * 4.2, ny * 4.2) * 0.08;
-                    // Среднечастотный шум для средних деталей
                     const midFreqNoise = this.noise(nx * 1.7, ny * 1.7) * 0.12;
                     
                     elevation += highFreqNoise + midFreqNoise;
@@ -144,7 +146,8 @@ class PerlinNoise {
                 
                 // Приводим к диапазону [0, 1]
                 elevation = (elevation + 1) * 0.5;
-                
+                elevation *= amplitude;
+                elevation *= scale / 100;
                 heightmap[y * width + x] = elevation;
             }
         }
@@ -178,7 +181,7 @@ class PerlinNoise {
             // Нелинейное смешивание для лучшего результата
             const base = baseNoise[i];
             const detail = detailNoise[i];
-            combined[i] = base + (detail * base * 0.3); // Детали сильнее в высоких областях
+            combined[i] = base + detail * 0.15;
         }
         
         return combined;

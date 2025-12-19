@@ -12,31 +12,32 @@ class DiamondSquare {
             t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
             return ((t ^ t >>> 14) >>> 0) / 4294967296;
         };
+    
+    }
+    
+    setSeed(seed) {
+    this.seed = seed;
+    this.random = this.mulberry32(seed);
     }
 
     generate(size, roughness = 0.5, initialHeight = 0.3) {
-        // Размер должен быть степенью двойки + 1 
-        const power = Math.ceil(Math.log2(size - 1));
-        const actualSize = Math.pow(2, power) + 1;
-        
-        console.log(`Diamond-Square: генерация ${actualSize}x${actualSize}, шероховатость: ${roughness}`);
 
-        const map = new Float32Array(actualSize * actualSize);
-        
-        // Инициализируем углы с улучшенными значениями
-        this.initCorners(map, actualSize, initialHeight);
-        
-        // Выполняем алгоритм с улучшенным сглаживанием
-        this.diamondSquareAlgorithm(map, actualSize, roughness);
-        
-        // Применяем дополнительное сглаживание для устранения артефактов
-        this.applyPostSmoothing(map, actualSize, 0.3);
-        
-        // Применяем коррекцию волн
-        this.applyWaveCorrection(map, actualSize, 0.2);
-        
-        return map;
-    }
+    // 🔥 КРИТИЧЕСКИ ВАЖНО
+    this.random = this.mulberry32(this.seed);
+
+    const power = Math.ceil(Math.log2(size - 1));
+    const actualSize = Math.pow(2, power) + 1;
+
+    const map = new Float32Array(actualSize * actualSize);
+
+    this.initCorners(map, actualSize, initialHeight);
+    this.diamondSquareAlgorithm(map, actualSize, roughness);
+    this.applyPostSmoothing(map, actualSize, 0.3);
+    this.applyWaveCorrection(map, actualSize, 0.2);
+
+    return map;
+}
+
 
     initCorners(map, size, initialHeight) {
         // Более разнообразные начальные значения

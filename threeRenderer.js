@@ -10,7 +10,13 @@ class ThreeRenderer {
         this.terrain = null;
 
         this.water = null;
+        this.waterEnabled = true;
         this.waterMaterial = null;
+
+        this.lastTerrainWidth = 0;
+        this.lastTerrainHeight = 0;
+        this.lastHeightScale = 1;
+
 
         this.isInitialized = false;
         this.lights = [];
@@ -211,7 +217,9 @@ class ThreeRenderer {
             console.error("Renderer ещё не инициализирован");
             return;
         }
-
+        this.lastTerrainWidth = width;
+        this.lastTerrainHeight = height;
+        this.lastHeightScale = heightScale;
         console.log("Создание террейна:", { width, height, heightScale, lod });
 
         if (this.terrain) {
@@ -262,11 +270,31 @@ class ThreeRenderer {
         this.terrain.position.set(-width / 2, 0, -height / 2);
 
         this.scene.add(this.terrain);
+        this.updateStats();
 
         console.log("Террейн создан.");
         
         this.positionCamera(width, height, heightScale);
     }
+
+        updateStats() {
+        if (!this.terrain || !this.terrain.geometry) return;
+
+        const geo = this.terrain.geometry;
+
+        const triangles = geo.index
+            ? geo.index.count / 3
+            : geo.attributes.position.count / 3;
+
+        const vertices = geo.attributes.position.count;
+
+        const polyEl = document.getElementById("polyCount");
+        const vertEl = document.getElementById("vertexCount");
+
+        if (polyEl) polyEl.textContent = Math.round(triangles).toLocaleString();
+        if (vertEl) vertEl.textContent = Math.round(vertices).toLocaleString();
+    }
+
 
       updateExistingTerrain(heightmap, heightScale = 80, waterLevel = 0.15) {
         if (!this.terrain || !this.terrain.geometry || !heightmap) return;
@@ -368,6 +396,43 @@ class ThreeRenderer {
 
         normal.needsUpdate = true;
     }
+
+    toggleWater() {
+    this.waterEnabled = !this.waterEnabled;
+
+    if (!this.waterEnabled) {
+        if (this.water) {
+            this.scene.remove(this.water);
+            this.water.geometry.dispose();
+            this.water.material.dispose();
+            this.water = null;
+            this.waterMaterial = null;
+        }
+    } else {
+        // пересоздаём воду при следующем updateWater
+        if (this.terrain) {
+            const size = Math.sqrt(this.terrain.geometry.attributes.position.count) | 0;
+            this.updateWater(
+            this.lastTerrainWidth,
+            this.lastTerrainHeight,
+            this.lastHeightScale,
+            this.waterLevel01
+        );
+        }
+    }
+    if (this.terrain &&
+    this.terrain.material &&
+    this.terrain.material.userData &&
+    this.terrain.material.userData.shader) {
+
+    const shader = this.terrain.material.userData.shader;
+    if (shader.uniforms && shader.uniforms.waterEnabled) {
+        shader.uniforms.waterEnabled.value = this.waterEnabled ? 1.0 : 0.0;
+    }
+    }
+
+    return this.waterEnabled;
+}
 
     // ----------------------------------------------------------
     // Vertex colors (UE5-style base layer mask)
@@ -487,8 +552,8 @@ class ThreeRenderer {
             shader.uniforms.heightScale = { value: heightScale };
             shader.uniforms.parallaxScale = { value: 0.03 };
             shader.uniforms.waterLevel01  = { value: this.waterLevel01 };
+            shader.uniforms.waterEnabled  = { value: this.waterEnabled ? 1.0 : 0.0 };
             shader.uniforms.colorIntensity = { value: 1.0 };
-
             // ----------------------------------------------------
             // Добавляем мировые позиции и нормали
             // ----------------------------------------------------
@@ -532,6 +597,7 @@ class ThreeRenderer {
                 uniform float heightScale;
                 uniform float parallaxScale;
                 uniform float waterLevel01; 
+                uniform float waterEnabled;
                 uniform float colorIntensity;
 
                 // текстуры
@@ -644,14 +710,36 @@ class ThreeRenderer {
                 float wSnow = pow(hHigh, 2.0) * (1.0 - slope * 0.7);
 
                 // ------------------------------------------------
+                // PRIORITY ORDER (top layers override lower ones)
+                // ------------------------------------------------
+
+                // cliff dominates everything below
+                wRock  *= (1.0 - wCliff);
+                wDirt  *= (1.0 - wCliff);
+                wGrass *= (1.0 - wCliff);
+                wSand  *= (1.0 - wCliff);
+
+                // rock dominates dirt / grass / sand
+                wDirt  *= (1.0 - wRock);
+                wGrass *= (1.0 - wRock);
+                wSand  *= (1.0 - wRock);
+
+                // grass dominates sand
+                wSand *= (1.0 - wGrass);
+
+                // ------------------------------------------------
                 // Shoreline: усиливаем песок вокруг уровня воды
                 // ------------------------------------------------
-                float shoreWidth = 0.04;                    // ширина береговой зоны в 0..1
-                float dh = abs(h - waterLevel01);           // высотное расстояние до уровня воды
-                float shore = 1.0 - smoothstep(shoreWidth, shoreWidth * 2.0, dh);
+                float shore = 0.0;
 
-                // Добавляем песка у берега (на пологих участках)
-                wSand += shore * (1.0 - slope) * 2.0;
+                if (waterEnabled > 0.5) {
+                    float shoreInner = waterLevel01 + 0.015;
+                    float shoreOuter = waterLevel01 + 0.05;
+                    shore = smoothstep(shoreInner, shoreOuter, h);
+                }
+
+                // песок у берега ТОЛЬКО если вода включена
+                wSand += shore * (1.0 - slope) * 1.8;
 
                 // небольшая стабилизация, чтобы не было нулевой суммы
                 wSand  = max(wSand,  0.0001);
@@ -715,7 +803,7 @@ class ThreeRenderer {
     // ВОДА: динамическая, с волнами и френелем
     // ----------------------------------------------------------
     updateWater(width, height, heightScale, waterLevel) {
-        if (!this.isInitialized) return;
+        if (!this.isInitialized || !this.waterEnabled) return;
 
         const y = heightScale * waterLevel; // waterLevel 0..1
 
@@ -791,6 +879,7 @@ class ThreeRenderer {
 
             this.scene.add(water);
             this.water = water;
+            this.water.visible = this.waterEnabled;
             } else {
                 // просто обновляем положение/размер
                 this.water.position.y = y;
@@ -856,9 +945,15 @@ class ThreeRenderer {
         return local.y;
     }
 
-    // ----------------------------------------------------------
-    // Уничтожение сцены и рендера
-    // ----------------------------------------------------------
+    setWaterEnabled(enabled) {
+    this.waterEnabled = enabled;
+
+    if (this.water) {
+        this.water.visible = enabled;
+    }
+    }
+
+
     dispose() {
     console.log("Удаление ThreeRenderer...");
 

@@ -1,123 +1,206 @@
 class HydraulicErosion {
     constructor() {
+        // Параметры (можешь подбирать под интерактивный режим)
         this.waterAmount = 0.01;
-        this.sedimentCapacityFactor = 4;
-        this.minSedimentCapacity = 0.01;
-        this.evaporateSpeed = 0.01;
-        this.gravity = 4;
-        this.maxDropletLifetime = 30;
+        this.sedimentCapacityFactor = 9.0;  // было 4.0
+        this.minSedimentCapacity = 0.03;    // было 0.01
+        this.evaporateSpeed = 0.012;  // было 0.02
+        this.gravity = 7.0;                 // было 4.0
+        this.maxDropletLifetime = 45;  // было 30
+        this.erosionSpeed = 0.75;       // было 0.3
+        this.depositionSpeed = 0.35;   // чуть слабее, чем эрозия
+        this.maxErosionPerStep = 0.12; // было 0.05
     }
 
     applyErosion(heightmap, width, height, iterations, intensity = 1.0) {
         if (iterations <= 0) return heightmap;
-        
-        const newHeightmap = new Float32Array(heightmap);
+        const map = new Float32Array(heightmap); // работаем с копией
 
         for (let i = 0; i < iterations; i++) {
-            this.simulateDroplet(newHeightmap, width, height, intensity);
+            this.simulateDroplet(map, width, height, intensity);
         }
 
-        return newHeightmap;
+        return map;
     }
 
-    simulateDroplet(heightmap, width, height, intensity) {
-        let posX = Math.random() * (width - 1);
-        let posY = Math.random() * (height - 1);
-        
-        let dirX = 0;
-        let dirY = 0;
-        let speed = 1;
-        let water = 1;
-        let sediment = 0;
+    // Билинейная интерполяция для плавной высоты в дробных координатах
+    sampleHeight(map, width, height, x, y) {
+        // clamp
+        if (x < 0) x = 0; if (y < 0) y = 0;
+        if (x > width - 1)  x = width - 1;
+        if (y > height - 1) y = height - 1;
+
+        const x0 = Math.floor(x), x1 = Math.min(width - 1, x0 + 1);
+        const y0 = Math.floor(y), y1 = Math.min(height - 1, y0 + 1);
+
+        const sx = x - x0, sy = y - y0;
+
+        const v00 = map[y0 * width + x0];
+        const v10 = map[y0 * width + x1];
+        const v01 = map[y1 * width + x0];
+        const v11 = map[y1 * width + x1];
+
+        const ix0 = v00 * (1 - sx) + v10 * sx;
+        const ix1 = v01 * (1 - sx) + v11 * sx;
+        return ix0 * (1 - sy) + ix1 * sy;
+    }
+
+    // градиент через центральные малые смещения (субпиксельный)
+    calculateGradient(map, width, height, posX, posY) {
+        const eps = 0.5; // смещение для численной производной
+        const hL = this.sampleHeight(map, width, height, posX - eps, posY);
+        const hR = this.sampleHeight(map, width, height, posX + eps, posY);
+        const hD = this.sampleHeight(map, width, height, posX, posY - eps);
+        const hU = this.sampleHeight(map, width, height, posX, posY + eps);
+
+        const gx = (hR - hL) / (2 * eps);
+        const gy = (hU - hD) / (2 * eps);
+
+        return { x: gx, y: gy, slope: Math.sqrt(gx * gx + gy * gy) };
+    }
+
+    simulateDroplet(map, width, height, intensity = 1.0) {
+        // стартовая позиция — внутри карты, с небольшой маржой
+        let posX = Math.random() * (width - 2) + 1;
+        let posY = Math.random() * (height - 2) + 1;
+
+        let dirX = 0, dirY = 0;
+        let speed = 1.0;
+        let water = 1.0;
+        let sediment = 0.0;
 
         for (let lifetime = 0; lifetime < this.maxDropletLifetime; lifetime++) {
-            const nodeX = Math.floor(posX);
-            const nodeY = Math.floor(posY);
+            // если вышли за границу — выходим
+            if (posX < 1 || posX >= width - 1 || posY < 1 || posY >= height - 1) break;
 
-            // Проверяем границы
-            if (nodeX < 0 || nodeX >= width - 1 || nodeY < 0 || nodeY >= height - 1) {
-                break;
-            }
+            const curHeight = this.sampleHeight(map, width, height, posX, posY);
+            const heightBoost = 1.0 + (1.0 - curHeight) * 0.8;
+            const grad = this.calculateGradient(map, width, height, posX, posY);
 
-            // Вычисляем градиент
-            const gradient = this.calculateGradient(heightmap, width, height, posX, posY);
-            
-            // Обновляем направление
-            dirX = (dirX * 0.5 - gradient.x * 0.5);
-            dirY = (dirY * 0.5 - gradient.y * 0.5);
-            
-            // Нормализуем направление
-            const len = Math.sqrt(dirX * dirX + dirY * dirY);
-            if (len > 0) {
-                dirX /= len;
-                dirY /= len;
-            }
+            // inertia + гравитация дают новое направление
+            const inertia = 0.3; // меньше — более адаптивное поведение
+            dirX = dirX * inertia - grad.x * (1 - inertia);
+            dirY = dirY * inertia - grad.y * (1 - inertia);
 
-            const newPosX = posX + dirX;
-            const newPosY = posY + dirY;
-
-            // Проверяем новые границы
-            if (newPosX < 0 || newPosX >= width - 1 || newPosY < 0 || newPosY >= height - 1) {
-                break;
-            }
-
-            // Вычисляем разницу высот
-            const newHeight = this.getHeight(heightmap, width, newPosX, newPosY);
-            const currentHeight = this.getHeight(heightmap, width, posX, posY);
-            const heightDiff = newHeight - currentHeight;
-
-            // Пропускаем если движемся вверх
-            if (heightDiff > 0) {
-                // Откладываем осадок при движении вверх
-                const depositAmount = Math.min(sediment, heightDiff);
-                this.addHeight(heightmap, width, posX, posY, depositAmount);
-                sediment -= depositAmount;
+            // нормализация направления
+            const len = Math.hypot(dirX, dirY);
+            if (len > 0.000001) {
+                dirX /= len; dirY /= len;
             } else {
-                // Эродируем при движении вниз
-                const erosionAmount = Math.min(-heightDiff * 0.1, 0.01) * intensity;
-                sediment += erosionAmount;
-                this.addHeight(heightmap, width, posX, posY, -erosionAmount);
+                // случайный шажок, чтобы убраться из плоской зоны
+                const angle = Math.random() * Math.PI * 2;
+                dirX = Math.cos(angle) * 1e-3;
+                dirY = Math.sin(angle) * 1e-3;
             }
 
-            // Обновляем скорость и воду
-            speed = Math.max(0.1, speed + heightDiff * this.gravity);
-            water *= (1 - this.evaporateSpeed);
+            // шаг движения зависит от скорости (scale)
+            const step = Math.max(0.25, Math.min(1.5, speed));
+            const newX = posX + dirX * step;
+            const newY = posY + dirY * step;
 
-            // Обновляем позицию
-            posX = newPosX;
-            posY = newPosY;
+            // граница
+            if (newX < 0 || newX >= width || newY < 0 || newY >= height) break;
 
-            // Прерываем если слишком мало воды
-            if (water < 0.001) break;
+            const newHeight = this.sampleHeight(map, width, height, newX, newY);
+            const heightDiff = newHeight - curHeight;
+
+            // вычисляем ёмкость седимента: зависит от скорости и уклона
+            const capacity = Math.max(
+                this.minSedimentCapacity,
+                this.sedimentCapacityFactor * speed * grad.slope
+            );
+
+            // если движемся вниз — можем эродировать; если вверх — осадить
+            if (heightDiff < 0) {
+                // энергия высоты высвобождается — эрозия возможна
+                let amount = Math.min(
+                    (capacity - sediment) * this.erosionSpeed,
+                    Math.abs(heightDiff) * this.erosionSpeed * 2.0
+                );
+
+                amount = Math.max(0, amount);
+                // лимит на один шаг, с учётом intensity
+                amount = Math.min(
+                    amount,
+                    this.maxErosionPerStep * (0.5 + intensity * 1.5) * heightBoost
+                );
+
+                // снимаем материал
+                if (amount > 1e-8) {
+                    // применяем распределённую эрозию: добавляем в ближайшие вершины
+                    this.applyErosionAt(map, width, height, posX, posY, amount);
+                    sediment += amount;
+                }
+            } else {
+                // движемся вверх — откладываем часть осадка
+                const depositAmount = Math.min(
+                    sediment,
+                    heightDiff * this.depositionSpeed
+                );
+                if (depositAmount > 1e-8) {
+                    this.applyDepositionAt(map, width, height, posX, posY, depositAmount);
+                    sediment -= depositAmount;
+                }
+            }
+
+            // обновляем скорость и воду
+            speed = Math.max(0.01, speed + heightDiff * this.gravity);
+            water *= (1 - this.evaporateSpeed * intensity);
+
+            // перенос седимента: если превышает ёмкость — осаждаем
+            if (sediment > capacity) {
+                const excess = (sediment - capacity) * this.depositionSpeed;
+                this.applyDepositionAt(map, width, height, posX, posY, excess);
+                sediment -= excess;
+            }
+
+            // обновляем позицию
+            posX = newX;
+            posY = newY;
+
+            // рано выходим если воды почти нет
+            if (water < 1e-4) break;
         }
     }
 
-    calculateGradient(heightmap, width, height, posX, posY) {
-        const coordX = Math.floor(posX);
-        const coordY = Math.floor(posY);
-        
-        const heightL = this.getHeight(heightmap, width, coordX - 1, coordY);
-        const heightR = this.getHeight(heightmap, width, coordX + 1, coordY);
-        const heightD = this.getHeight(heightmap, width, coordX, coordY - 1);
-        const heightU = this.getHeight(heightmap, width, coordX, coordY + 1);
-        
-        return {
-            x: (heightR - heightL) * 0.5,
-            y: (heightU - heightD) * 0.5
-        };
+    // распределённая эрозия вокруг дробной позиции (триангуляция/билинейное распределение)
+    applyErosionAt(map, width, height, x, y, amount) {
+        const x0 = Math.floor(x), y0 = Math.floor(y);
+        const sx = x - x0, sy = y - y0;
+
+        // распределяем amount по 4 соседям билинейно
+        const w00 = (1 - sx) * (1 - sy);
+        const w10 = sx * (1 - sy);
+        const w01 = (1 - sx) * sy;
+        const w11 = sx * sy;
+
+        this.addToIndex(map, width, height, x0, y0, -amount * w00);
+        this.addToIndex(map, width, height, x0 + 1, y0, -amount * w10);
+        this.addToIndex(map, width, height, x0, y0 + 1, -amount * w01);
+        this.addToIndex(map, width, height, x0 + 1, y0 + 1, -amount * w11);
     }
 
-    getHeight(heightmap, width, x, y) {
-        const coordX = Math.max(0, Math.min(width - 1, Math.floor(x)));
-        const coordY = Math.max(0, Math.min(width - 1, Math.floor(y)));
-        return heightmap[coordY * width + coordX];
+    applyDepositionAt(map, width, height, x, y, amount) {
+        const x0 = Math.floor(x), y0 = Math.floor(y);
+        const sx = x - x0, sy = y - y0;
+
+        const w00 = (1 - sx) * (1 - sy);
+        const w10 = sx * (1 - sy);
+        const w01 = (1 - sx) * sy;
+        const w11 = sx * sy;
+
+        this.addToIndex(map, width, height, x0, y0, amount * w00);
+        this.addToIndex(map, width, height, x0 + 1, y0, amount * w10);
+        this.addToIndex(map, width, height, x0, y0 + 1, amount * w01);
+        this.addToIndex(map, width, height, x0 + 1, y0 + 1, amount * w11);
     }
 
-    addHeight(heightmap, width, x, y, delta) {
-        const coordX = Math.max(0, Math.min(width - 1, Math.floor(x)));
-        const coordY = Math.max(0, Math.min(width - 1, Math.floor(y)));
-        const newHeight = heightmap[coordY * width + coordX] + delta;
-        // Ограничиваем высоту разумными пределами
-        heightmap[coordY * width + coordX] = Math.max(-1, Math.min(2, newHeight));
+    addToIndex(map, width, height, ix, iy, delta) {
+        if (ix < 0 || ix >= width || iy < 0 || iy >= height) return;
+        const idx = iy * width + ix;
+        let v = map[idx] + delta;
+        // clamp to reasonable bounds
+        v = Math.max(-1, Math.min(2, v));
+        map[idx] = v;
     }
 }

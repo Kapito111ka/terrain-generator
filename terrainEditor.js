@@ -408,7 +408,7 @@ class TerrainEditor {
     const btn = document.getElementById('toggleBrush');
     if (btn) {
         // Подменяем текст для наглядности: "Откл. кисть" когда включена возможность рисовать
-        btn.textContent = this.brushEnabled ? 'Откл. кисть' : 'Вкл. кисть';
+        btn.textContent = this.brushEnabled ? 'wył.pendz.' : 'wł.pendz.';
         btn.classList.toggle('active', !this.brushEnabled);
     }
     try {
